@@ -9,6 +9,7 @@
     "dev:server": "nodemon server/index.js",
     "dev:client": "vite",
     "build": "vite build",
+    "build:pages": "vite build && echo 'Frontend built to docs/ folder for GitHub Pages'",
     "preview": "vite preview",
     "start": "node server/index.js"
   },
