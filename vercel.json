@@ -3,17 +3,6 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite",
-  "functions": {
-    "api/transcribe.js": {
-      "maxDuration": 300
-    },
-    "api/chat.js": {
-      "maxDuration": 60
-    },
-    "api/export.js": {
-      "maxDuration": 30
-    }
-  },
   "rewrites": [
     {
       "source": "/api/transcribe",

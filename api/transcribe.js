@@ -85,11 +85,23 @@ export default async function handler(req, res) {
       });
     } catch (error) {
       await fs.unlink(tempPath).catch(() => {});
+      
+      // Handle OpenAI API errors
+      if (error.status === 401) {
+        return res.status(401).json({
+          error: 'Invalid API key',
+          message: 'OpenAI API key is incorrect or not set. Please configure OPENAI_API_KEY in Vercel environment variables.'
+        });
+      }
+      
       throw error;
     }
   } catch (error) {
     console.error('Transcription error:', error);
-    return res.status(500).json({
+    
+    // Return appropriate status code based on error
+    const statusCode = error.status || 500;
+    return res.status(statusCode).json({
       error: 'Transcription failed',
       message: error.message
     });
