@@ -8,10 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Configure multer for file uploads (in-memory for Vercel)
-// Note: Vercel Pro allows up to 50MB, free tier is 4.5MB
+// Vercel free tier has a 4.5MB request body limit
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB (requires Vercel Pro)
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4MB (under Vercel's 4.5MB free tier limit)
   fileFilter: (req, file, cb) => {
     const audioMimeTypes = [
       'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave',
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
           if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(413).json({ 
               error: 'File too large', 
-              message: 'Maximum file size is 25MB' 
+              message: 'Maximum file size is 4MB' 
             });
           }
           reject(err);
