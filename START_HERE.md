@@ -28,7 +28,7 @@ This starts:
 3. **Import**: `philipposk/audio2text`
 4. **Add Environment Variable**:
    - Name: `OPENAI_API_KEY`
-   - Value: `OPENAI_KEY_REDACTED`
+   - Value: (Your OpenAI API key - check your .env file locally)
 5. **Deploy**: Click "Deploy"
 6. **Add Custom Domain**: `audio2text.6x7.gr` in Vercel settings
 
