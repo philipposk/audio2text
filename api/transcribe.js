@@ -66,21 +66,27 @@ export default async function handler(req, res) {
 
     // Log first few characters for debugging (don't log full key)
     console.log('API Key present:', process.env.OPENAI_API_KEY ? `sk-...${process.env.OPENAI_API_KEY.slice(-4)}` : 'MISSING');
+    console.log('File received:', req.file.originalname, 'Size:', req.file.size, 'bytes');
 
-    // Save file temporarily
-    const tempPath = `/tmp/${Date.now()}-${req.file.originalname}`;
-    await fs.writeFile(tempPath, req.file.buffer);
-
+    // Save file temporarily to /tmp (required for Vercel serverless)
+    const tempPath = `/tmp/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    
     try {
-      // Transcribe
+      // Write buffer to temp file
+      await fs.writeFile(tempPath, req.file.buffer);
+      console.log('File written to:', tempPath);
+
+      // Transcribe using the file path
       const transcription = await transcribeAudio(tempPath, {
         language: req.body.language || 'el',
         prompt: req.body.prompt || '',
         response_format: 'verbose_json'
       });
 
-      // Clean up
-      await fs.unlink(tempPath).catch(() => {});
+      // Clean up temp file
+      await fs.unlink(tempPath).catch((err) => {
+        console.error('Error cleaning up temp file:', err);
+      });
 
       return res.json({
         success: true,
@@ -90,6 +96,7 @@ export default async function handler(req, res) {
         duration: transcription.duration
       });
     } catch (error) {
+      // Clean up temp file on error
       await fs.unlink(tempPath).catch(() => {});
       
       // Handle OpenAI API errors
