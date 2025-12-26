@@ -58,8 +58,14 @@ export default async function handler(req, res) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OpenAI API key not configured' });
+      return res.status(500).json({ 
+        error: 'OpenAI API key not configured',
+        message: 'OPENAI_API_KEY environment variable is missing. Please add it in Vercel Settings → Environment Variables.'
+      });
     }
+
+    // Log first few characters for debugging (don't log full key)
+    console.log('API Key present:', process.env.OPENAI_API_KEY ? `sk-...${process.env.OPENAI_API_KEY.slice(-4)}` : 'MISSING');
 
     // Save file temporarily
     const tempPath = `/tmp/${Date.now()}-${req.file.originalname}`;
@@ -87,10 +93,10 @@ export default async function handler(req, res) {
       await fs.unlink(tempPath).catch(() => {});
       
       // Handle OpenAI API errors
-      if (error.status === 401) {
+      if (error.status === 401 || error.message?.includes('401') || error.message?.includes('Incorrect API key')) {
         return res.status(401).json({
           error: 'Invalid API key',
-          message: 'OpenAI API key is incorrect or not set. Please configure OPENAI_API_KEY in Vercel environment variables.'
+          message: 'OpenAI API key is incorrect, expired, or revoked. Please: 1) Check if the key is still valid at https://platform.openai.com/account/api-keys 2) Create a new key if needed 3) Update OPENAI_API_KEY in Vercel Settings → Environment Variables 4) Redeploy the project.'
         });
       }
       
