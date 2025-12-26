@@ -50,7 +50,7 @@
 ## 🔧 Environment Variables Needed
 
 ```env
-OPENAI_API_KEY=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
+OPENAI_API_KEY=your_openai_api_key_here
 NODE_ENV=production
 PORT=3000
 ```
