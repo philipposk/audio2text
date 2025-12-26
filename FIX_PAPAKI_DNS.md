@@ -1,10 +1,10 @@
-# Fix DNS at Papaki - Point audio2text.6x7.gr to Vercel
+# Fix DNS at Papaki - Point mrtranscribe.6x7.gr to Vercel
 
 ## Current Problem
 
 Your DNS is still pointing to GitHub Pages:
 ```bash
-$ dig audio2text.6x7.gr CNAME +short
+$ dig mrtranscribe.6x7.gr CNAME +short
 philipposk.github.io.  ❌ WRONG!
 ```
 
@@ -18,7 +18,7 @@ It should point to Vercel instead.
    - https://vercel.com/dashboard
    - Click on your **audio2text** project
    - Go to **Settings** → **Domains**
-   - Find `audio2text.6x7.gr` in the list
+   - Find `mrtranscribe.6x7.gr` in the list
    - Click on it to see the DNS configuration
 
 2. **Copy the CNAME value:**
@@ -35,7 +35,7 @@ It should point to Vercel instead.
 
 2. **Find the CNAME record for `audio2text`:**
    - Look for a CNAME record with:
-     - **Name/Host**: `audio2text` (or `audio2text.6x7.gr`)
+     - **Name/Host**: `audio2text` (or `mrtranscribe.6x7.gr`)
      - **Current Value**: `philipposk.github.io` (or similar)
 
 3. **Edit the CNAME record:**
@@ -50,7 +50,7 @@ It should point to Vercel instead.
 After saving, wait 5-10 minutes, then check:
 
 ```bash
-dig audio2text.6x7.gr CNAME +short
+dig mrtranscribe.6x7.gr CNAME +short
 ```
 
 **Should return:**
@@ -69,14 +69,14 @@ philipposk.github.io
 - **Usually takes:** 5-60 minutes
 - **Can take up to:** 24 hours (rare)
 - **Check in Vercel:**
-  - Go to Settings → Domains → `audio2text.6x7.gr`
+  - Go to Settings → Domains → `mrtranscribe.6x7.gr`
   - Click **Refresh**
   - Status should change to **"Valid Configuration"** ✅
 
 ### Step 5: Test the Site
 
 Once DNS propagates:
-- Visit: https://audio2text.6x7.gr
+- Visit: https://mrtranscribe.6x7.gr
 - Should show your Vercel deployment (same as audio2text-seven.vercel.app)
 - HTTPS should work automatically
 
@@ -84,7 +84,7 @@ Once DNS propagates:
 
 1. **The CNAME Name field should be:**
    - ✅ `audio2text` (just the subdomain)
-   - ❌ NOT `audio2text.6x7.gr` (full domain)
+   - ❌ NOT `mrtranscribe.6x7.gr` (full domain)
    - ❌ NOT `@` (that's for root domain)
 
 2. **If you can't find the record:**
@@ -106,9 +106,9 @@ Once DNS propagates:
 - [ ] Changed value from `philipposk.github.io` to Vercel CNAME
 - [ ] Saved the changes
 - [ ] Waited 5-60 minutes
-- [ ] Verified with `dig audio2text.6x7.gr CNAME +short`
+- [ ] Verified with `dig mrtranscribe.6x7.gr CNAME +short`
 - [ ] Checked Vercel shows "Valid Configuration"
-- [ ] Tested https://audio2text.6x7.gr in browser
+- [ ] Tested https://mrtranscribe.6x7.gr in browser
 
 ## Still Not Working?
 

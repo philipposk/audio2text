@@ -111,7 +111,7 @@ git remote add origin https://github.com/philipposk/audio2text.git
 git push -u origin main
 ```
 
-### To audio2text.6x7.gr
+### To mrtranscribe.6x7.gr
 1. Deploy to Vercel (recommended) - see DEPLOY.md
 2. Configure custom domain
 3. Add environment variables

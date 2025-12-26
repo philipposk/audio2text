@@ -17,7 +17,7 @@ Mr.Transcribe can be accessed via Telegram, WhatsApp, and Messenger as a bot nam
 
 ```bash
 curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
-  -d "url=https://audio2text.6x7.gr/api/messaging/telegram"
+  -d "url=https://mrtranscribe.6x7.gr/api/messaging/telegram"
 ```
 
 ### 3. Update Environment Variables
@@ -58,7 +58,7 @@ await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
 ### 2. Configure Webhook
 
 In your WhatsApp Business dashboard:
-- Webhook URL: `https://audio2text.6x7.gr/api/messaging/whatsapp`
+- Webhook URL: `https://mrtranscribe.6x7.gr/api/messaging/whatsapp`
 - Verify token: Set in environment variable
 
 ### 3. Environment Variables
@@ -85,7 +85,7 @@ WHATSAPP_ACCESS_TOKEN=your_access_token
 
 ### 3. Configure Webhook
 
-- Webhook URL: `https://audio2text.6x7.gr/api/messaging/messenger`
+- Webhook URL: `https://mrtranscribe.6x7.gr/api/messaging/messenger`
 - Verify Token: Set in environment variable
 - Subscribe to: `messages`, `messaging_postbacks`
 

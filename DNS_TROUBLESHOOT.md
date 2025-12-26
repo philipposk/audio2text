@@ -1,10 +1,10 @@
-# DNS Troubleshooting for audio2text.6x7.gr
+# DNS Troubleshooting for mrtranscribe.6x7.gr
 
 ## Current Status
 
 ❌ **DNS is still pointing to GitHub Pages:**
 ```
-audio2text.6x7.gr → philipposk.github.io (WRONG!)
+mrtranscribe.6x7.gr → philipposk.github.io (WRONG!)
 ```
 
 ✅ **You have the correct CNAME value:**
@@ -26,7 +26,7 @@ On Papaki (https://www.papaki.com/cp2/manageDomain.aspx?domain=6x7.gr):
 
 **Issue 1: Wrong Name Field**
 - ✅ Correct: Name = `audio2text` (just the subdomain)
-- ❌ Wrong: Name = `audio2text.6x7.gr` (full domain)
+- ❌ Wrong: Name = `mrtranscribe.6x7.gr` (full domain)
 - ❌ Wrong: Name = `@` (root domain)
 
 **Issue 2: Multiple Records**
@@ -65,14 +65,14 @@ After updating on Papaki:
 
 Check with:
 ```bash
-dig audio2text.6x7.gr CNAME +short
+dig mrtranscribe.6x7.gr CNAME +short
 ```
 
 Should return: `fe052388f074b507.vercel-dns-017.com`
 
 Then:
 ```bash
-dig audio2text.6x7.gr +short
+dig mrtranscribe.6x7.gr +short
 ```
 
 Should show Vercel IPs (NOT 185.199.x.x which are GitHub Pages).
@@ -91,7 +91,7 @@ Should show Vercel IPs (NOT 185.199.x.x which are GitHub Pages).
 
 1. **Double-check Vercel:**
    - Go to Vercel → Settings → Domains
-   - Click `audio2text.6x7.gr`
+   - Click `mrtranscribe.6x7.gr`
    - Verify it shows the exact CNAME value you're using
    - Check for any error messages
 
@@ -101,6 +101,6 @@ Should show Vercel IPs (NOT 185.199.x.x which are GitHub Pages).
 
 3. **Try Different DNS Checker:**
    - https://dnschecker.org
-   - Search for: `audio2text.6x7.gr`
+   - Search for: `mrtranscribe.6x7.gr`
    - Check CNAME record globally
 

@@ -50,7 +50,7 @@ NODE_ENV=development
 
 ## Deployment
 
-Deploy to `audio2text.6x7.gr` using Vercel, Netlify, or your preferred hosting.
+Deploy to `mrtranscribe.6x7.gr` using Vercel, Netlify, or your preferred hosting.
 
 ## License
 

@@ -11,7 +11,7 @@ For a **full-stack app** like Mr.Transcribe, you have two options:
 These platforms support full-stack apps with backend APIs:
 - **Vercel**: Best for Next.js/React apps with API routes
 - **Netlify**: Good for serverless functions
-- Both support custom domains like `audio2text.6x7.gr`
+- Both support custom domains like `mrtranscribe.6x7.gr`
 
 **Why?** Your app needs:
 - Backend API at `/api/transcribe`
@@ -50,7 +50,7 @@ If you only want to show the frontend UI (without functionality):
 2. Import `philipposk/audio2text`
 3. Add environment variable: `OPENAI_API_KEY`
 4. Deploy
-5. Add custom domain: `audio2text.6x7.gr`
+5. Add custom domain: `mrtranscribe.6x7.gr`
 
 This gives you the **full working app** with all features!
 

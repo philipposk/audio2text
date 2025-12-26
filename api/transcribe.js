@@ -8,9 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Configure multer for file uploads (in-memory for Vercel)
+// Vercel serverless functions have a 4.5MB request body limit
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4MB (under Vercel's 4.5MB limit)
   fileFilter: (req, file, cb) => {
     const audioMimeTypes = [
       'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave',

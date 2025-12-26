@@ -32,7 +32,7 @@
    - Frontend builds from `client/` directory
    - Backend runs from `server/` directory
 5. **Custom Domain**:
-   - Add `audio2text.6x7.gr` in Vercel settings
+   - Add `mrtranscribe.6x7.gr` in Vercel settings
    - Configure DNS as instructed
 
 ### Option 2: Other Platforms
