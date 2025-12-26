@@ -1,0 +1,80 @@
+.file-upload {
+  width: 100%;
+}
+
+.upload-area {
+  border: 3px dashed var(--border-color);
+  border-radius: 1rem;
+  padding: 4rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: var(--surface-color);
+}
+
+.upload-area:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-color);
+}
+
+.upload-area.drag-active {
+  border-color: var(--primary-color);
+  background: var(--bg-color);
+  transform: scale(1.02);
+}
+
+.upload-area.transcribing {
+  border-color: var(--primary-color);
+  background: var(--bg-color);
+  cursor: wait;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.upload-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.upload-area h3 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.upload-area p {
+  color: var(--text-secondary);
+  margin: 0.25rem 0;
+}
+
+.upload-hint {
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+.selected-file {
+  color: var(--primary-color);
+  font-weight: 500;
+  margin-top: 1rem;
+}
+
+.spinner {
+  border: 4px solid var(--border-color);
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
