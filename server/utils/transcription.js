@@ -2,12 +2,15 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { Readable } from 'stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 30000, // 30 second timeout
+  maxRetries: 2
 });
 
 /**
@@ -21,11 +24,18 @@ export async function transcribeAudio(filePath, options = {}) {
       throw new Error(`File not found: ${filePath}`);
     }
 
+    // Get file stats
+    const stats = fs.statSync(filePath);
+    console.log('File stats:', { size: stats.size, path: filePath });
+
     // Create a readable stream from the file
     // OpenAI SDK v4 accepts File, Blob, or ReadStream
     const fileStream = fs.createReadStream(filePath);
     
-    console.log('Sending file to OpenAI:', filePath);
+    // Extract filename from path for OpenAI
+    const fileName = filePath.split('/').pop() || 'audio.mp3';
+    
+    console.log('Sending file to OpenAI:', fileName, 'Size:', stats.size, 'bytes');
 
     const transcription = await openai.audio.transcriptions.create({
       file: fileStream,
@@ -34,6 +44,9 @@ export async function transcribeAudio(filePath, options = {}) {
       prompt: options.prompt || '',
       response_format: options.response_format || 'json',
       temperature: 0
+    }, {
+      // Pass filename as metadata
+      filename: fileName
     });
 
     console.log('Transcription successful');
@@ -44,13 +57,20 @@ export async function transcribeAudio(filePath, options = {}) {
       message: error.message,
       status: error.status,
       code: error.code,
-      type: error.type
+      type: error.type,
+      cause: error.cause
     });
     
-    // Preserve original error for better debugging
-    if (error.message) {
-      throw error;
+    // Handle specific OpenAI errors
+    if (error.status === 401) {
+      throw new Error('Invalid API key. Please check OPENAI_API_KEY in Vercel environment variables.');
     }
+    
+    if (error.message?.includes('Connection') || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      throw new Error(`Connection error: Unable to reach OpenAI API. ${error.message}`);
+    }
+    
+    // Preserve original error message
     throw new Error(`Transcription failed: ${error.message || 'Unknown error'}`);
   }
 }
