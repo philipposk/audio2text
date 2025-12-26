@@ -16,8 +16,16 @@ const openai = new OpenAI({
  */
 export async function transcribeAudio(filePath, options = {}) {
   try {
-    // OpenAI SDK accepts fs.ReadStream directly in Node.js
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    // Create a readable stream from the file
+    // OpenAI SDK v4 accepts File, Blob, or ReadStream
     const fileStream = fs.createReadStream(filePath);
+    
+    console.log('Sending file to OpenAI:', filePath);
 
     const transcription = await openai.audio.transcriptions.create({
       file: fileStream,
@@ -28,10 +36,22 @@ export async function transcribeAudio(filePath, options = {}) {
       temperature: 0
     });
 
+    console.log('Transcription successful');
     return transcription;
   } catch (error) {
     console.error('OpenAI transcription error:', error);
-    throw new Error(`Transcription failed: ${error.message}`);
+    console.error('Error details:', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+      type: error.type
+    });
+    
+    // Preserve original error for better debugging
+    if (error.message) {
+      throw error;
+    }
+    throw new Error(`Transcription failed: ${error.message || 'Unknown error'}`);
   }
 }
 
