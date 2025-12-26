@@ -1,0 +1,17 @@
+# Ignore heavy directories that Cursor doesn't need to index
+node_modules/
+dist/
+.temp/
+uploads/
+*.log
+.DS_Store
+
+# Ignore build artifacts
+.next/
+.cache/
+build/
+out/
+
+# Ignore large documentation in node_modules
+node_modules/**/*.md
+
