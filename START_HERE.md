@@ -30,7 +30,7 @@ This starts:
    - Name: `OPENAI_API_KEY`
    - Value: (Your OpenAI API key - check your .env file locally)
 5. **Deploy**: Click "Deploy"
-6. **Add Custom Domain**: `audio2text.6x7.gr` in Vercel settings
+6. **Add Custom Domain**: `mrtranscribe.6x7.gr` in Vercel settings
 
 ### Deploy to Netlify (Alternative)
 
@@ -46,7 +46,7 @@ This starts:
 
 1. **Deploy to Vercel/Netlify** (5 minutes)
 2. **Add Environment Variable** (OPENAI_API_KEY)
-3. **Configure Custom Domain** (audio2text.6x7.gr)
+3. **Configure Custom Domain** (mrtranscribe.6x7.gr)
 4. **Test the App** (upload an audio file)
 
 ## 🎉 That's It!

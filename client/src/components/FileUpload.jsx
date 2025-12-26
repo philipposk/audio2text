@@ -33,6 +33,13 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
   };
 
   const handleFile = async (file) => {
+    // Validate file size (Vercel has 4.5MB limit for serverless functions)
+    const maxSize = 4 * 1024 * 1024; // 4MB
+    if (file.size > maxSize) {
+      alert(`File is too large. Maximum size is 4MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
+      return;
+    }
+
     // Validate file type
     const audioTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 
                        'audio/flac', 'audio/ogg', 'audio/webm', 'audio/aac'];
@@ -58,7 +65,13 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
       });
 
       if (!response.ok) {
-        throw new Error('Transcription failed');
+        if (response.status === 413) {
+          throw new Error('File is too large. Maximum size is 4MB.');
+        } else if (response.status === 404) {
+          throw new Error('API endpoint not found. Please check the deployment.');
+        }
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Transcription failed (${response.status})`);
       }
 
       const data = await response.json();
@@ -100,7 +113,7 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
             <div className="upload-icon">📁</div>
             <h3>Drop your audio file here</h3>
             <p>or click to browse</p>
-            <p className="upload-hint">Supports: MP3, WAV, M4A, FLAC, OGG, WEBM, AAC</p>
+            <p className="upload-hint">Supports: MP3, WAV, M4A, FLAC, OGG, WEBM, AAC (Max 4MB)</p>
             {selectedFile && (
               <p className="selected-file">Selected: {selectedFile.name}</p>
             )}

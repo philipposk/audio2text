@@ -1,12 +1,12 @@
-# Fix DNS for audio2text.6x7.gr
+# Fix DNS for mrtranscribe.6x7.gr
 
 ## Current Problem
 
-The domain `audio2text.6x7.gr` is currently pointing to **GitHub Pages** instead of **Vercel**.
+The domain `mrtranscribe.6x7.gr` is currently pointing to **GitHub Pages** instead of **Vercel**.
 
 DNS lookup shows:
 ```
-audio2text.6x7.gr → philipposk.github.io (WRONG!)
+mrtranscribe.6x7.gr → philipposk.github.io (WRONG!)
 ```
 
 ## Solution: Update DNS Records
@@ -14,7 +14,7 @@ audio2text.6x7.gr → philipposk.github.io (WRONG!)
 ### Step 1: Get Vercel DNS Configuration
 
 1. Go to Vercel Dashboard: https://vercel.com/filippos-projects-06f05211/audio2text/settings/domains
-2. Find `audio2text.6x7.gr` in the domains list
+2. Find `mrtranscribe.6x7.gr` in the domains list
 3. Click on it or check the DNS configuration
 4. Vercel will show you the DNS records needed
 
@@ -44,20 +44,20 @@ You need to update the DNS record for the **subdomain** `audio2text`.
 
 - Usually takes: 5-60 minutes
 - Can take up to: 24 hours (rare)
-- Check status: Visit https://audio2text.6x7.gr
+- Check status: Visit https://mrtranscribe.6x7.gr
 
 ## Quick Check
 
 After updating DNS, verify with:
 ```bash
-dig audio2text.6x7.gr +short
+dig mrtranscribe.6x7.gr +short
 ```
 
 Should show Vercel's servers, not GitHub Pages IPs.
 
 ## Alternative: Check Vercel Domain Settings
 
-In Vercel → Settings → Domains → `audio2text.6x7.gr`:
+In Vercel → Settings → Domains → `mrtranscribe.6x7.gr`:
 - Check if it shows "Valid Configuration" or any errors
 - Vercel will tell you exactly what DNS records are needed
 - Copy those exact values to your domain registrar

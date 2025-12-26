@@ -1,6 +1,6 @@
 # Deployment Guide for Mr.Transcribe
 
-## Deploy to audio2text.6x7.gr
+## Deploy to mrtranscribe.6x7.gr
 
 ### Option 1: Vercel (Recommended)
 
@@ -22,7 +22,7 @@
 
 3. **Configure Custom Domain**
    - In Vercel dashboard, go to Settings > Domains
-   - Add `audio2text.6x7.gr`
+   - Add `mrtranscribe.6x7.gr`
    - Follow DNS configuration instructions
 
 ### Option 2: Netlify
@@ -76,19 +76,19 @@ Optional (for messaging platforms):
 
 1. Create a bot with [@BotFather](https://t.me/botfather)
 2. Get your bot token
-3. Set webhook: `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://audio2text.6x7.gr/api/messaging/telegram`
+3. Set webhook: `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://mrtranscribe.6x7.gr/api/messaging/telegram`
 
 ### WhatsApp Setup
 
 1. Set up WhatsApp Business API
 2. Configure webhook in your WhatsApp Business account
-3. Point webhook to: `https://audio2text.6x7.gr/api/messaging/whatsapp`
+3. Point webhook to: `https://mrtranscribe.6x7.gr/api/messaging/whatsapp`
 
 ### Messenger Setup
 
 1. Create Facebook App and Page
 2. Set up Messenger product
-3. Configure webhook: `https://audio2text.6x7.gr/api/messaging/messenger`
+3. Configure webhook: `https://mrtranscribe.6x7.gr/api/messaging/messenger`
 
 ## GitHub Repository Setup
 
