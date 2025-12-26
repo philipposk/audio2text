@@ -50,7 +50,7 @@
 ## 🔧 Environment Variables Needed
 
 ```env
-OPENAI_API_KEY=OPENAI_KEY_REDACTED
+OPENAI_API_KEY=your_openai_api_key_here
 NODE_ENV=production
 PORT=3000
 ```
