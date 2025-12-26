@@ -33,10 +33,10 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
   };
 
   const handleFile = async (file) => {
-    // Validate file size (25MB limit)
-    const maxSize = 25 * 1024 * 1024; // 25MB
+    // Validate file size (Vercel free tier has 4.5MB limit)
+    const maxSize = 4 * 1024 * 1024; // 4MB
     if (file.size > maxSize) {
-      alert(`File is too large. Maximum size is 25MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
+      alert(`File is too large. Maximum size is 4MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB.`);
       return;
     }
 
@@ -66,7 +66,7 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
 
       if (!response.ok) {
         if (response.status === 413) {
-          throw new Error('File is too large. Maximum size is 25MB.');
+          throw new Error('File is too large. Maximum size is 4MB.');
         } else if (response.status === 404) {
           throw new Error('API endpoint not found. Please check the deployment.');
         }
@@ -113,7 +113,7 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
             <div className="upload-icon">📁</div>
             <h3>Drop your audio file here</h3>
             <p>or click to browse</p>
-            <p className="upload-hint">Supports: MP3, WAV, M4A, FLAC, OGG, WEBM, AAC (Max 25MB)</p>
+            <p className="upload-hint">Supports: MP3, WAV, M4A, FLAC, OGG, WEBM, AAC (Max 4MB)</p>
             {selectedFile && (
               <p className="selected-file">Selected: {selectedFile.name}</p>
             )}
