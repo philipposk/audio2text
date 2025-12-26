@@ -38,8 +38,18 @@ export default async function handler(req, res) {
     // Handle file upload
     await new Promise((resolve, reject) => {
       upload.single('audio')(req, res, (err) => {
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          // Handle multer errors
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ 
+              error: 'File too large', 
+              message: 'Maximum file size is 4MB' 
+            });
+          }
+          reject(err);
+        } else {
+          resolve();
+        }
       });
     });
 
