@@ -71,7 +71,14 @@ function FileUpload({ onTranscription, isTranscribing, setIsTranscribing }) {
           throw new Error('API endpoint not found. Please check the deployment.');
         }
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Transcription failed (${response.status})`);
+        const errorMessage = errorData.message || `Transcription failed (${response.status})`;
+        
+        // Show specific error for quota issues
+        if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
+          throw new Error('OpenAI API quota exceeded. Please check your OpenAI account billing and add credits. Visit https://platform.openai.com/account/billing');
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
