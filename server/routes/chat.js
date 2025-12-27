@@ -1,10 +1,25 @@
 import express from 'express';
 import OpenAI from 'openai';
+import Groq from 'groq-sdk';
 
 const router = express.Router();
-const openai = new OpenAI({
+
+// Initialize OpenAI if API key is provided
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
-});
+}) : null;
+
+// Initialize Groq if API key is provided
+const groq = process.env.GROQ_API_KEY ? new Groq({
+  apiKey: process.env.GROQ_API_KEY
+}) : null;
+
+// Determine which AI provider to use (prefer Groq if available, fallback to OpenAI)
+const getAIProvider = () => {
+  if (groq) return 'groq';
+  if (openai) return 'openai';
+  return null;
+};
 
 // Chat with AI to refine transcription
 router.post('/', async (req, res) => {
@@ -15,8 +30,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OpenAI API key not configured' });
+    const provider = getAIProvider();
+    if (!provider) {
+      return res.status(500).json({ error: 'No AI API key configured. Please set OPENAI_API_KEY or GROQ_API_KEY' });
     }
 
     // Build conversation context
@@ -40,19 +56,30 @@ ${transcription || 'No transcription provided yet'}`;
       { role: 'user', content: message }
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 2000
-    });
+    let completion;
+    if (provider === 'groq') {
+      completion = await groq.chat.completions.create({
+        model: 'llama-3.1-70b-versatile',
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2000
+      });
+    } else {
+      completion = await openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2000
+      });
+    }
 
     const aiResponse = completion.choices[0].message.content;
 
     res.json({
       success: true,
       response: aiResponse,
-      usage: completion.usage
+      usage: completion.usage,
+      provider: provider
     });
 
   } catch (error) {
@@ -73,6 +100,11 @@ router.post('/refine', async (req, res) => {
       return res.status(400).json({ error: 'Transcription and instructions are required' });
     }
 
+    const provider = getAIProvider();
+    if (!provider) {
+      return res.status(500).json({ error: 'No AI API key configured. Please set OPENAI_API_KEY or GROQ_API_KEY' });
+    }
+
     const systemPrompt = `You are a transcription refinement expert. Refine the following transcription according to the user's instructions. 
 Return ONLY the refined transcription text, without additional commentary unless specifically requested.
 
@@ -82,21 +114,35 @@ ${transcription}
 User instructions:
 ${instructions}`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: 'Please refine the transcription according to my instructions.' }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000
-    });
+    let completion;
+    if (provider === 'groq') {
+      completion = await groq.chat.completions.create({
+        model: 'llama-3.1-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Please refine the transcription according to my instructions.' }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000
+      });
+    } else {
+      completion = await openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Please refine the transcription according to my instructions.' }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000
+      });
+    }
 
     const refinedText = completion.choices[0].message.content;
 
     res.json({
       success: true,
-      refinedTranscription: refinedText
+      refinedTranscription: refinedText,
+      provider: provider
     });
 
   } catch (error) {

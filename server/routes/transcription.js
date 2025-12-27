@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { transcribeAudio } from '../utils/transcription.js';
+import { transcribeAudioLocal } from '../utils/localTranscription.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs/promises';
@@ -51,18 +52,51 @@ router.post('/', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OpenAI API key not configured' });
-    }
+    // No longer required - we can use local transcription as fallback
 
     console.log(`📝 Transcribing file: ${req.file.filename}`);
 
-    // Transcribe using OpenAI Whisper API
-    const transcription = await transcribeAudio(req.file.path, {
-      language: req.body.language || 'el', // Default to Greek
-      prompt: req.body.prompt || '',
-      response_format: 'verbose_json'
-    });
+    let transcription;
+    let useLocal = false;
+
+    // Try OpenAI first if API key is available
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        console.log('Attempting transcription with OpenAI API...');
+        transcription = await transcribeAudio(req.file.path, {
+          language: req.body.language || 'el', // Default to Greek
+          prompt: req.body.prompt || '',
+          response_format: 'verbose_json'
+        });
+        console.log('✓ OpenAI transcription successful');
+      } catch (openaiError) {
+        // If quota exceeded or API unavailable, fall back to local
+        const isQuotaError = openaiError.message?.includes('quota') || 
+                            openaiError.message?.includes('billing') ||
+                            openaiError.message?.includes('exceeded') ||
+                            openaiError.status === 429;
+        
+        if (isQuotaError || !openaiError.status) {
+          console.log('⚠ OpenAI API unavailable (quota exceeded or connection issue)');
+          console.log('🔄 Falling back to FREE local Whisper transcription...');
+          useLocal = true;
+        } else {
+          // For other errors, throw immediately
+          throw openaiError;
+        }
+      }
+    } else {
+      console.log('ℹ No OpenAI API key configured, using FREE local Whisper...');
+      useLocal = true;
+    }
+
+    // Use local transcription if OpenAI failed or not configured
+    if (useLocal) {
+      transcription = await transcribeAudioLocal(req.file.path, {
+        language: req.body.language || 'el'
+      });
+      console.log('✓ Local transcription successful');
+    }
 
     // Clean up uploaded file
     await fs.unlink(req.file.path).catch(() => {});
@@ -72,7 +106,8 @@ router.post('/', upload.single('audio'), async (req, res) => {
       transcription: transcription.text,
       segments: transcription.segments || [],
       language: transcription.language,
-      duration: transcription.duration
+      duration: transcription.duration,
+      method: useLocal ? 'local' : 'openai'
     });
 
   } catch (error) {
