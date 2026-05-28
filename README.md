@@ -1,74 +1,32 @@
-# Mr.Transcribe - Audio to Text Transcription Web App
+# Translator
 
-A modern web application that transcribes audio files to text with AI-powered refinement capabilities and messaging platform integration.
+Translator is a website that turns audio into written text and then translates it. You give it a recording (a file you upload, a link to a YouTube/Vimeo video, or even your live microphone) and it writes out everything that was said. From there it can translate that text into another language, clean it up, or turn it into subtitles for a video. It is meant for anyone who needs spoken words turned into accurate, editable, shareable text without doing it by hand.
 
-## Features
+(The folder is named "audio2text", but the app itself is called Translator.)
 
-- 🎤 **Multi-format Audio Support**: Upload audio files in any format (MP3, WAV, M4A, FLAC, etc.)
-- 🌍 **High-Quality Transcription**: Uses OpenAI Whisper API OR free local Whisper model (automatic fallback)
-- 💰 **100% FREE Option**: Local Whisper transcription runs entirely on your machine - no API costs!
-- 💬 **AI Chat Interface**: Chat with AI to refine, edit, and improve transcriptions
-- 📄 **Multiple Export Formats**: Export transcriptions as TXT, DOCX, PDF, JSON, SRT, VTT
-- 📱 **Messaging Integration**: Connect via Telegram, WhatsApp, or Messenger as "Mr.Transcribe"
-- 🔄 **Iterative Refinement**: Keep refining transcriptions until you're satisfied
+## What it does
+- Listens to a recording and writes down what was said.
+- Works with lots of audio types and even video links (YouTube, Vimeo, SoundCloud).
+- Translates the written text into more than 25 languages.
+- Can translate directly from another language into English.
+- Makes real subtitles for videos and can even burn them onto the video.
+- Lets you tidy up or rewrite the text with an AI helper.
+- Saves a history of everything you've transcribed so you can find it later.
+- Exports the result as a Word doc, PDF, plain text, or subtitle file.
+- Can label who said what when there are multiple speakers.
 
-## Tech Stack
+## Status
+Working app. It's a website you run in your browser, backed by a server that does the listening and translating.
 
-- **Frontend**: React, TailwindCSS, Vite
-- **Backend**: Node.js, Express
-- **Transcription**: OpenAI Whisper API (with automatic fallback to FREE local Whisper)
-- **AI Chat**: OpenAI GPT-4 or Groq (Llama 3.1 70B)
-- **Export**: docx, pdf-lib, json
+---
+### For developers
+Node.js app. Backend is Express (`server/index.js`), with a React + Vite frontend (`client/`, built to `dist/`). Transcription uses the OpenAI Whisper API with a local Whisper fallback; translation/chat auto-selects between Groq and OpenAI. Job history is stored via lowdb (in-memory on Vercel). Speaker separation (diarization) runs through Replicate. Live mic streaming over WebSocket at `/api/live`.
 
-## Setup
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- OpenAI API key (required for transcription)
-- Groq API key (optional, for chat/refinement - will be preferred if provided)
-
-### Installation
-
+Run locally:
 ```bash
-# Install dependencies
 npm install
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your OpenAI API key
-
-# Start development server
-npm run dev
+cp .env.example .env   # set OPENAI_API_KEY and/or GROQ_API_KEY
+npm run dev            # backend + Vite dev server
+npm test               # vitest + supertest
 ```
-
-### Environment Variables
-
-Create a `.env` file in the root directory:
-
-```env
-# Required for transcription
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Optional: For chat/refinement (will be preferred over OpenAI if provided)
-GROQ_API_KEY=your_groq_api_key_here
-
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-```
-
-**Note**: 
-- `OPENAI_API_KEY` is optional - if not provided or quota exceeded, the app automatically uses FREE local Whisper transcription
-- `GROQ_API_KEY` is optional but recommended for faster/cheaper chat responses
-- If both API keys are provided, Groq will be used for chat/refinement, OpenAI for transcription
-- **FREE Mode**: If OpenAI quota is exceeded, the app automatically falls back to local Whisper (first use downloads ~500MB model, then works offline forever!)
-
-## Deployment
-
-Deploy to `mrtranscribe.6x7.gr` using Vercel, Netlify, or your preferred hosting.
-
-## License
-
-MIT License - see LICENSE file for details.
-
+Health check: http://localhost:3000/api/health. Full REST API reference, auth/quota model, and deployment notes are in the project's `docs/deployment/` folder and the git history. Deployable via Docker (`Dockerfile`, `docker-compose.yml`) or Vercel (`vercel.json`, mirrored serverless handlers in `api/`). License: MIT.
