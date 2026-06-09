@@ -1,164 +1,132 @@
+// OpenAI Whisper transcription utilities.
+// Supports two tasks:
+//   - task: 'transcribe' (default) -> /audio/transcriptions, keeps source language.
+//   - task: 'translate'            -> /audio/translations, output is English text.
+// Adds word-level timestamp granularities when verbose_json is requested.
+
 import OpenAI from 'openai';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { Readable } from 'stream';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Lazy initialization of OpenAI client
 let openaiClient = null;
-const getOpenAIClient = () => {
+function getOpenAIClient() {
   if (!openaiClient && process.env.OPENAI_API_KEY) {
     openaiClient = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
-      timeout: 120000, // 2 minute timeout for large files
+      timeout: 120000,
       maxRetries: 3
     });
   }
   return openaiClient;
-};
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRetryable(error) {
+  return (
+    error.code === 'ECONNRESET' ||
+    error.code === 'ETIMEDOUT' ||
+    error.cause?.code === 'ECONNRESET' ||
+    /Connection|timeout/i.test(error.message || '')
+  );
+}
+
+function isHardFail(error) {
+  if (error.status === 401 || error.status === 429) return true;
+  return /quota|billing|exceeded/i.test(error.message || '');
+}
 
 /**
- * Transcribe audio file using OpenAI Whisper API
- * This provides much better quality than local Whisper, especially for Greek
+ * Transcribe (or translate) an audio file via OpenAI.
+ *
+ * @param {string} filePath
+ * @param {object} options
+ * @param {'transcribe'|'translate'} [options.task='transcribe']
+ * @param {string} [options.language='el']   - source language hint (ignored for translate)
+ * @param {string} [options.prompt='']
+ * @param {'json'|'verbose_json'|'text'|'srt'|'vtt'} [options.response_format='verbose_json']
+ * @param {Array<'word'|'segment'>} [options.timestamp_granularities=['segment']]
  */
 export async function transcribeAudio(filePath, options = {}) {
-  try {
-    // Get OpenAI client (lazy initialization)
-    const openai = getOpenAIClient();
-    if (!openai) {
-      throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.');
-    }
-
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
-
-    // Get file stats
-    const stats = fs.statSync(filePath);
-    console.log('File stats:', { size: stats.size, path: filePath });
-    
-    // Extract filename from path for OpenAI
-    const fileName = filePath.split('/').pop() || 'audio.mp3';
-    
-    console.log('Sending file to OpenAI:', fileName, 'Size:', stats.size, 'bytes');
-
-    // Use ReadStream - OpenAI SDK supports this
-    // Retry logic for connection issues
-    let lastError;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`Attempt ${attempt} to transcribe...`);
-        // Recreate stream for each attempt (streams can only be read once)
-        const fileStream = fs.createReadStream(filePath);
-        
-        const transcription = await openai.audio.transcriptions.create({
-          file: fileStream,
-          model: 'whisper-1',
-          language: options.language || 'el', // 'el' for Greek
-          prompt: options.prompt || '',
-          response_format: options.response_format || 'json',
-          temperature: 0
-        });
-        
-        console.log('Transcription successful');
-        return transcription;
-      } catch (error) {
-        lastError = error;
-        console.error(`Attempt ${attempt} failed:`, error.message);
-        
-        // Don't retry on quota or authentication errors
-        if (error.status === 429 || error.status === 401 || 
-            error.message?.includes('quota') || error.message?.includes('billing')) {
-          throw error;
-        }
-        
-        // If it's a connection error and we have retries left, wait and retry
-        if (attempt < 3 && (
-          error.code === 'ECONNRESET' || 
-          error.message?.includes('Connection') || 
-          error.message?.includes('timeout') ||
-          error.cause?.code === 'ECONNRESET'
-        )) {
-          console.log(`Connection error on attempt ${attempt}, retrying in ${2 * attempt} seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt)); // Exponential backoff
-          continue;
-        }
-        throw error;
-      }
-    }
-    
-    throw lastError;
-
-    console.log('Transcription successful');
-    return transcription;
-  } catch (error) {
-    console.error('OpenAI transcription error:', error);
-    console.error('Error details:', {
-      message: error.message,
-      status: error.status,
-      code: error.code,
-      type: error.type,
-      cause: error.cause
-    });
-    
-    // Handle specific OpenAI errors
-    if (error.status === 401) {
-      throw new Error('Invalid API key. Please check OPENAI_API_KEY in your environment variables.');
-    }
-    
-    if (error.status === 429 || error.statusCode === 429) {
-      throw new Error('OpenAI API quota exceeded. Please check your OpenAI billing and plan. You may need to add credits or upgrade your plan. Visit https://platform.openai.com/account/billing');
-    }
-    
-    // Check error response body for quota messages
-    if (error.response?.status === 429 || error.response?.statusText === 'Too Many Requests') {
-      throw new Error('OpenAI API quota exceeded. Please check your OpenAI billing and add credits to your account. Visit https://platform.openai.com/account/billing');
-    }
-    
-    if (error.message?.includes('quota') || error.message?.includes('billing') || 
-        error.message?.includes('exceeded') || error.cause?.message?.includes('quota')) {
-      throw new Error('OpenAI API quota exceeded. Please check your OpenAI billing and add credits to your account. Visit https://platform.openai.com/account/billing');
-    }
-    
-    if (error.message?.includes('Connection') || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      throw new Error(`Connection error: Unable to reach OpenAI API. ${error.message}`);
-    }
-    
-    // Preserve original error message
-    throw new Error(`Transcription failed: ${error.message || 'Unknown error'}`);
+  const openai = getOpenAIClient();
+  if (!openai) {
+    throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY.');
   }
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+
+  const stats = fs.statSync(filePath);
+  const fileName = filePath.split('/').pop() || 'audio.mp3';
+  console.log(`[whisper] file=${fileName} size=${stats.size}B task=${options.task || 'transcribe'}`);
+
+  const task = options.task === 'translate' ? 'translate' : 'transcribe';
+  const response_format = options.response_format || 'verbose_json';
+  const granularities = options.timestamp_granularities || ['segment'];
+
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const fileStream = fs.createReadStream(filePath);
+      const params = {
+        file: fileStream,
+        model: 'whisper-1',
+        response_format,
+        temperature: 0
+      };
+      if (options.prompt) params.prompt = options.prompt;
+
+      // The translate endpoint always outputs English and does NOT accept `language`.
+      if (task === 'transcribe') {
+        params.language = options.language || 'el';
+        if (response_format === 'verbose_json') {
+          params.timestamp_granularities = granularities;
+        }
+      }
+
+      const result = task === 'translate'
+        ? await openai.audio.translations.create(params)
+        : await openai.audio.transcriptions.create(params);
+
+      console.log(`[whisper] ok attempt=${attempt} task=${task}`);
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.error(`[whisper] attempt=${attempt} failed: ${error.message}`);
+      if (isHardFail(error)) throw mapError(error);
+      if (attempt < 3 && isRetryable(error)) {
+        await sleep(2000 * attempt);
+        continue;
+      }
+      throw mapError(error);
+    }
+  }
+  throw mapError(lastError);
+}
+
+function mapError(error) {
+  if (!error) return new Error('Transcription failed: unknown error');
+  if (error.status === 401) {
+    return new Error('Invalid OpenAI API key. Check OPENAI_API_KEY.');
+  }
+  if (error.status === 429 || /quota|billing|exceeded/i.test(error.message || '')) {
+    return new Error('OpenAI API quota exceeded. Visit https://platform.openai.com/account/billing');
+  }
+  if (/Connection|ECONNREFUSED|ETIMEDOUT/i.test(error.message || error.code || '')) {
+    return new Error(`Connection error: ${error.message}`);
+  }
+  return new Error(`Transcription failed: ${error.message || 'unknown error'}`);
 }
 
 /**
- * Re-transcribe with specific instructions
+ * Re-transcribe with custom prompt instructions (used to steer Whisper toward
+ * domain vocabulary on a second pass).
  */
-export async function retranscribeAudio(filePath, instructions) {
-  try {
-    // Get OpenAI client (lazy initialization)
-    const openai = getOpenAIClient();
-    if (!openai) {
-      throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.');
-    }
-
-    const fileStream = fs.createReadStream(filePath);
-
-    const transcription = await openai.audio.transcriptions.create({
-      file: fileStream,
-      model: 'whisper-1',
-      language: 'el',
-      prompt: instructions,
-      response_format: 'verbose_json',
-      temperature: 0
-    });
-
-    return transcription;
-  } catch (error) {
-    console.error('Re-transcription error:', error);
-    throw new Error(`Re-transcription failed: ${error.message}`);
-  }
+export async function retranscribeAudio(filePath, instructions, options = {}) {
+  return transcribeAudio(filePath, {
+    ...options,
+    prompt: instructions,
+    response_format: 'verbose_json'
+  });
 }
-

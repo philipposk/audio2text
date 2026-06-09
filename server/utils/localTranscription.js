@@ -54,7 +54,7 @@ print(json.dumps({"text": result["text"], "language": result["language"]}))`;
     if (scriptCreated && fs.existsSync(tempScriptPath)) {
       try {
         fs.unlinkSync(tempScriptPath);
-      } catch (e) {
+      } catch {
         // Ignore cleanup errors
       }
     }

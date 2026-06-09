@@ -2,19 +2,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": "vite",
-  "rewrites": [
-    {
-      "source": "/api/transcribe",
-      "destination": "/api/transcribe.js"
-    },
-    {
-      "source": "/api/chat",
-      "destination": "/api/chat.js"
-    },
-    {
-      "source": "/api/export/:format",
-      "destination": "/api/export.js"
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
     }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/(.*)",     "destination": "/index.html"   }
   ]
 }

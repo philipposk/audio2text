@@ -1,71 +1,1397 @@
-import { useState } from 'react';
-import Header from './components/Header';
-import FileUpload from './components/FileUpload';
-import TranscriptionView from './components/TranscriptionView';
-import ChatInterface from './components/ChatInterface';
-import ExportOptions from './components/ExportOptions';
-import './styles/App.css';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { I, LANGS } from './icons';
+import {
+  transcribeFile, ingestUrl, translateJobSegments,
+  chatRefine, listJobs, getJob, deleteJob, exportTranscript,
+  listGlossaries, createGlossary, deleteGlossary,
+  openLiveSocket, setApiKey, getApiKey, downloadBlob
+} from './api';
+import './styles/translator.css';
 
-function App() {
-  const [transcription, setTranscription] = useState('');
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]);
-  const [refinedTranscription, setRefinedTranscription] = useState('');
+// ─── constants ───────────────────────────────────────────────────────────────
+const ACCENTS = ['#1f5d4c', '#c7522a', '#3b3a8f', '#0e0e0d'];
+const REFINE_SUGGESTIONS = [
+  'Make it more formal',
+  'Fix punctuation',
+  'Shorten',
+  'Keep brand names',
+];
+const EXPORT_FORMATS = ['srt', 'vtt', 'txt', 'docx', 'pdf', 'json'];
 
-  const handleTranscription = (text) => {
-    setTranscription(text);
-    setRefinedTranscription(text);
-  };
+// ─── utils ───────────────────────────────────────────────────────────────────
+function hexToSoft(hex, dark) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if (dark) return `rgba(${r},${g},${b},0.14)`;
+  const m = 0.88;
+  return `rgb(${Math.round(r + (255 - r) * m)}, ${Math.round(g + (255 - g) * m)}, ${Math.round(b + (255 - b) * m)})`;
+}
 
-  const handleChatResponse = (response) => {
-    // Update transcription if AI provides refined version
-    if (response.includes('refined') || response.includes('improved')) {
-      // Extract refined text if provided
-      setRefinedTranscription(response);
-    }
-  };
+function fmtDuration(secs) {
+  if (!secs) return '';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 86400000) return 'Today';
+  if (diff < 172800000) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short' });
+}
+
+function langInfo(code) {
+  return LANGS.find(l => l.code === code) || LANGS[0];
+}
+
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+function Sidebar({ activeView, onNav, jobCount, theme, onThemeToggle, apiKey }) {
   return (
-    <div className="app">
-      <Header />
-      <main className="main-content">
-        <div className="container">
-          <div className="upload-section">
-            <FileUpload 
-              onTranscription={handleTranscription}
-              isTranscribing={isTranscribing}
-              setIsTranscribing={setIsTranscribing}
-            />
-          </div>
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">T</div>
+        <div className="brand-name">Translator<em>·beta</em></div>
+      </div>
 
-          {(transcription || refinedTranscription) && (
-            <div className="content-grid">
-              <div className="transcription-section">
-                <TranscriptionView 
-                  transcription={refinedTranscription || transcription}
-                  originalTranscription={transcription}
-                />
-                <ExportOptions 
-                  transcription={refinedTranscription || transcription}
-                />
-              </div>
-
-              <div className="chat-section">
-                <ChatInterface
-                  transcription={refinedTranscription || transcription}
-                  onResponse={handleChatResponse}
-                  chatHistory={chatHistory}
-                  setChatHistory={setChatHistory}
-                  setRefinedTranscription={setRefinedTranscription}
-                />
-              </div>
-            </div>
-          )}
+      <div className="nav">
+        <div className={`nav-item ${activeView === 'transcribe' ? 'active' : ''}`}
+          onClick={() => onNav('transcribe')}>
+          <span className="ico">{I.upload}</span><span>Transcribe</span>
         </div>
-      </main>
+        <div className={`nav-item ${activeView === 'live' ? 'active' : ''}`}
+          onClick={() => onNav('live')}>
+          <span className="ico">{I.mic}</span><span>Live</span>
+        </div>
+        <div className={`nav-item ${activeView === 'history' ? 'active' : ''}`}
+          onClick={() => onNav('history')}>
+          <span className="ico">{I.history}</span><span>History</span>
+          {jobCount > 0 && <span className="count">{jobCount}</span>}
+        </div>
+
+        <div className="nav-section">Workspace</div>
+        <div className={`nav-item ${activeView === 'glossary' ? 'active' : ''}`}
+          onClick={() => onNav('glossary')}>
+          <span className="ico">{I.glossary}</span><span>Glossary</span>
+        </div>
+        <div className={`nav-item ${activeView === 'settings' ? 'active' : ''}`}
+          onClick={() => onNav('settings')}>
+          <span className="ico">{I.settings}</span><span>Settings</span>
+        </div>
+      </div>
+
+      <div className="sidebar-foot">
+        <div className="user" style={{ cursor: 'pointer' }} onClick={onThemeToggle} title="Toggle theme">
+          <div className="avatar" style={{ fontSize: 11 }}>{theme === 'dark' ? '☀' : '🌙'}</div>
+          <div className="user-meta">
+            <span className="user-name">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            <span className="user-plan">{apiKey ? 'API key set' : 'No API key'}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Topbar ──────────────────────────────────────────────────────────────────
+function Topbar({ appState, title, onReset }) {
+  return (
+    <div className="topbar">
+      <div className="breadcrumb">
+        <b>Transcribe</b>
+        {appState === 'result' && title && <><span>/</span><span>{title}</span></>}
+        {appState === 'transcribing' && <><span>/</span><span>Processing…</span></>}
+      </div>
+      <div className="topbar-actions">
+        {appState !== 'empty' && (
+          <button className="btn sm" onClick={onReset}>New</button>
+        )}
+      </div>
     </div>
   );
 }
 
-export default App;
+// ─── LangPicker modal ─────────────────────────────────────────────────────────
+function LangPicker({ value, onChange, onClose, excludeAuto }) {
+  const [q, setQ] = useState('');
+  const filtered = LANGS.filter(l => {
+    if (excludeAuto && l.code === 'auto') return false;
+    return l.name.toLowerCase().includes(q.toLowerCase()) || l.code.includes(q.toLowerCase());
+  });
 
+  useEffect(() => {
+    const close = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [onClose]);
+
+  return (
+    <div className="lang-picker-overlay" onClick={onClose}>
+      <div className="lang-picker-modal" onClick={e => e.stopPropagation()}>
+        <div className="lang-picker-search">
+          {I.search}
+          <input
+            autoFocus
+            placeholder="Search language…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+          />
+        </div>
+        <div className="lang-picker-list">
+          {filtered.map(l => (
+            <div
+              key={l.code}
+              className={`lang-picker-item ${value === l.code ? 'active' : ''}`}
+              onClick={() => { onChange(l.code); onClose(); }}
+            >
+              <span className="lang-flag" style={{ background: l.color }}>{l.flag}</span>
+              <span>{l.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LangBar ─────────────────────────────────────────────────────────────────
+function LangBar({ source, target, onSwap, onPickSource, onPickTarget, detectedLang }) {
+  const src = langInfo(source);
+  const tgt = langInfo(target);
+  return (
+    <div className="lang-bar">
+      <div className="lang-cell" onClick={onPickSource}>
+        <span className="lbl">From</span>
+        <div className="lang-picker">
+          <span className="lang-flag" style={{ background: src.color }}>{src.flag}</span>
+          <span className="lang-name">{src.name}</span>
+          <span style={{ color: 'var(--muted)' }}>{I.chev}</span>
+          {source === 'auto' && detectedLang && (
+            <span className="lang-detect">
+              <span className="dot" />Detected: {detectedLang}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="swap" onClick={onSwap} title="Swap">{I.swap}</div>
+      <div className="lang-cell" onClick={onPickTarget}>
+        <span className="lbl">To</span>
+        <div className="lang-picker">
+          <span className="lang-flag" style={{ background: tgt.color }}>{tgt.flag}</span>
+          <span className="lang-name">{tgt.name}</span>
+          <span style={{ color: 'var(--muted)' }}>{I.chev}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modes ───────────────────────────────────────────────────────────────────
+function Modes({ mode, onChange }) {
+  const items = [
+    { id: 'file', label: 'Upload file', ico: I.upload },
+    { id: 'url', label: 'From URL', ico: I.link },
+    { id: 'mic', label: 'Record', ico: I.mic_dot },
+  ];
+  return (
+    <div className="modes">
+      {items.map(it => (
+        <div key={it.id} className={`mode ${mode === it.id ? 'active' : ''}`} onClick={() => onChange(it.id)}>
+          {it.ico} {it.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── FileDrop ─────────────────────────────────────────────────────────────────
+function FileDrop({ onFile }) {
+  const inputRef = useRef();
+  const [dragging, setDragging] = useState(false);
+
+  const handle = (file) => {
+    if (!file) return;
+    const ok = file.type.startsWith('audio/') || file.type.startsWith('video/') ||
+      /\.(mp3|wav|m4a|flac|ogg|mp4|webm|aac|mov|mkv)$/i.test(file.name);
+    if (ok) onFile(file);
+  };
+
+  return (
+    <div
+      className={`dropzone ${dragging ? 'dragging' : ''}`}
+      onClick={() => inputRef.current?.click()}
+      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={e => { e.preventDefault(); setDragging(false); handle(e.dataTransfer.files[0]); }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.mp4,.webm,.aac"
+        style={{ display: 'none' }}
+        onChange={e => handle(e.target.files[0])}
+      />
+      <div className="dropzone-ico">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+        </svg>
+      </div>
+      <div>
+        <h3>Drop a recording, paste, or browse</h3>
+        <p>Up to 2 GB · audio or video · we'll detect the language automatically</p>
+      </div>
+      <div className="dropzone-formats">
+        {['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'webm', 'aac'].map(f => (
+          <span key={f} className="chip">{f}</span>
+        ))}
+      </div>
+      <div className="dropzone-actions">
+        <button className="btn accent" onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}>
+          Choose file
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── UrlInput ─────────────────────────────────────────────────────────────────
+function UrlInput({ onUrl }) {
+  const [val, setVal] = useState('');
+  const submit = () => { if (val.trim()) onUrl(val.trim()); };
+  return (
+    <div className="url-input">
+      <span className="ico">{I.link}</span>
+      <input
+        placeholder="Paste a YouTube, Vimeo, Loom or direct media URL…"
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && submit()}
+        autoFocus
+      />
+      <button className="btn accent" onClick={submit} disabled={!val.trim()}>
+        Transcribe {I.arrow}
+      </button>
+    </div>
+  );
+}
+
+// ─── MicPanel ─────────────────────────────────────────────────────────────────
+function MicPanel({ onStart }) {
+  return (
+    <div className="mic">
+      <button className="mic-btn" onClick={onStart}>{I.mic}</button>
+      <div className="mic-meta">
+        <h4>Start recording</h4>
+        <p>Live captions in 25+ languages · auto-saved on stop</p>
+      </div>
+      <div className="wave">
+        {Array.from({ length: 28 }).map((_, i) => (
+          <span key={i} style={{ height: `${8 + Math.abs(Math.sin(i * 0.6)) * 22}px`, opacity: 0.4 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Transcribing ─────────────────────────────────────────────────────────────
+function Transcribing({ fileName, fileSize }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  return (
+    <div className="processing">
+      <div className="proc-head">
+        <div className="proc-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+          </svg>
+        </div>
+        <div>
+          <p className="proc-title">{fileName || 'Processing…'}</p>
+          <p className="proc-sub">{fileSize ? `${fileSize} · ` : ''}This usually takes 30–60 seconds per 10 min of audio</p>
+        </div>
+        <div className="proc-elapsed">{mm}:{ss}</div>
+      </div>
+
+      <div className="live-wave">
+        {Array.from({ length: 60 }).map((_, i) => (
+          <span key={i} style={{ height: `${20 + Math.abs(Math.sin(i * 0.4)) * 44}px`, animationDelay: `${(i % 12) * 0.08}s` }} />
+        ))}
+      </div>
+
+      <div className="steps">
+        <div className="step done">
+          <div className="step-label"><span className="step-dot" />Uploaded</div>
+          <div className="step-detail">{fileName || '—'}</div>
+        </div>
+        <div className="step active">
+          <div className="step-label"><span className="step-dot" />Transcribing</div>
+          <div className="step-detail">Whisper · processing…</div>
+        </div>
+        <div className="step">
+          <div className="step-label"><span className="step-dot" />Ready</div>
+          <div className="step-detail">Almost there</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RecentCard ───────────────────────────────────────────────────────────────
+function RecentCard({ job, onSelect, onDelete }) {
+  const src = langInfo(job.language || 'auto');
+  const snippet = (job.transcription || job.text || '').slice(0, 120);
+
+  return (
+    <div className="recent-card" onClick={() => onSelect(job)}>
+      <div className="recent-card-head">
+        <div className="pair">
+          <span className="lang-flag" style={{ background: src.color, width: 16, height: 16, fontSize: 8 }}>
+            {src.flag}
+          </span>
+          {I.arrow}
+          <span className="lang-flag" style={{ background: langInfo('en').color, width: 16, height: 16, fontSize: 8 }}>
+            EN
+          </span>
+        </div>
+        <span>{fmtDate(job.createdAt)}</span>
+      </div>
+      <div className="recent-card-title">{job.filename || job.sourceName || job.title || job.id}</div>
+      <div className="recent-card-snippet">{snippet}…</div>
+      <div className="recent-card-foot">
+        <span>{I.play} {fmtDuration(job.duration)}</span>
+        <span
+          title="Delete"
+          onClick={e => { e.stopPropagation(); onDelete(job.id); }}
+          style={{ cursor: 'pointer', opacity: 0.5 }}
+        >
+          ✕
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RecentSection({ jobs, onSelect, onDeleteJob }) {
+  if (!jobs.length) return null;
+  return (
+    <div className="recent">
+      <div className="recent-head">
+        <div className="recent-title">Recent</div>
+      </div>
+      <div className="recent-grid">
+        {jobs.slice(0, 3).map(job => (
+          <RecentCard key={job.id} job={job} onSelect={onSelect} onDelete={onDeleteJob} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Result view ──────────────────────────────────────────────────────────────
+function ResultView({ job, translatedJob, source, target, onTranslate, translating, refineHistory, onRefine }) {
+  const [refineInput, setRefineInput] = useState('');
+  const [copying, setCopying] = useState(null);
+  const [exporting, setExporting] = useState(null);
+
+  const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
+  const tgt = langInfo(target);
+
+  const segments = job.segments || [];
+  const translatedSegs = translatedJob?.segments || [];
+
+  const fullText = job.transcription || segments.map(s => s.text).join(' ');
+  const translatedText = translatedJob?.transcription || translatedSegs.map(s => s.text).join(' ');
+
+  const handleCopy = async (text, key) => {
+    await navigator.clipboard.writeText(text).catch(() => { });
+    setCopying(key);
+    setTimeout(() => setCopying(null), 1500);
+  };
+
+  const handleExport = async (format) => {
+    setExporting(format);
+    try {
+      const blob = await exportTranscript(format, {
+        transcription: fullText,
+        segments,
+        jobId: job.id,
+        title: job.filename,
+        // Export route expects array of strings (text only), not segment objects
+        translatedSegments: translatedSegs.length ? translatedSegs.map(s => s.text || '') : undefined,
+      });
+      downloadBlob(blob, `${job.filename || job.id}.${format}`);
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const submitRefine = async (msg) => {
+    if (!msg.trim()) return;
+    setRefineInput('');
+    await onRefine(msg);
+  };
+
+  const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+  const speakerCount = new Set(segments.map(s => s.speaker).filter(Boolean)).size;
+
+  return (
+    <>
+      <div className="result">
+        <div className="result-head">
+          <div className="result-meta">
+            <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{job.filename || job.id}</span>
+            <span className="pill"><span className="dot" />{translatedJob ? 'Translated' : 'Transcribed'}</span>
+            {job.duration && <span>{fmtDuration(job.duration)}</span>}
+            <span>· {wordCount} words</span>
+            {speakerCount > 0 && <span>· {speakerCount} speakers</span>}
+          </div>
+          <div className="result-actions">
+            <button className="btn sm" onClick={() => handleCopy(fullText, 'orig')}>
+              {I.copy} {copying === 'orig' ? 'Copied!' : 'Copy'}
+            </button>
+            {!translatedJob && (
+              <button className="btn sm accent" onClick={onTranslate} disabled={translating}>
+                {translating ? 'Translating…' : `Translate → ${tgt.name}`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={`pane-grid ${translatedJob ? '' : 'single'}`}>
+          {/* Original pane */}
+          <div className="pane">
+            <div className="pane-head">
+              <div className="pane-lang">
+                <span className="lang-flag" style={{ background: src.color }}>{src.flag}</span>
+                {src.name} <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 4 }}>Original</span>
+              </div>
+              <div className="pane-tools">
+                <div className="pane-tool" title="Copy" onClick={() => handleCopy(fullText, 'orig2')}>{I.copy}</div>
+              </div>
+            </div>
+            <div className="pane-body">
+              {segments.length > 0 ? segments.map((seg, i) => (
+                <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
+                  <span className="ts">{fmtDuration(seg.start)}</span>
+                  {seg.text}
+                </p>
+              )) : (
+                <p className="speaker">{fullText}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Translation pane */}
+          {translatedJob && (
+            <div className="pane">
+              <div className="pane-head">
+                <div className="pane-lang">
+                  <span className="lang-flag" style={{ background: tgt.color }}>{tgt.flag}</span>
+                  {tgt.name} <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 4 }}>Translation</span>
+                </div>
+                <div className="pane-tools">
+                  <div className="pane-tool" title="Copy" onClick={() => handleCopy(translatedText, 'trans')}>{I.copy}</div>
+                  <div className="pane-tool" title="More">{I.more}</div>
+                </div>
+              </div>
+              <div className="pane-body">
+                {translatedSegs.length > 0 ? translatedSegs.map((seg, i) => (
+                  <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
+                    <span className="ts">{fmtDuration(seg.start)}</span>
+                    {seg.text}
+                  </p>
+                )) : (
+                  <p className="speaker">{translatedText}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Refine bar */}
+        <div className="refine">
+          {refineHistory.length > 0 && (
+            <div className="refine-history">
+              {refineHistory.map((h, i) => (
+                <div key={i} className="refine-history-item">
+                  <span className="refine-q">{h.q}</span>
+                  <span className="refine-a">{h.a}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="refine-input" onClick={() => { }}>
+            <span className="spark">{I.spark}</span>
+            <input
+              placeholder="Ask Translator to refine…"
+              value={refineInput}
+              onChange={e => setRefineInput(e.target.value)}
+              onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitRefine(refineInput); }}
+              style={{ background: 'transparent', border: 'none', outline: 'none', flex: 1, fontSize: 14, color: 'var(--ink)' }}
+            />
+            <span className="kbd">⌘⏎</span>
+          </div>
+          <div className="refine-suggest">
+            {REFINE_SUGGESTIONS.map(s => (
+              <span key={s} className="suggest" onClick={() => submitRefine(s)}>{s}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Export toolbar */}
+      <div className="result-toolbar">
+        <div className="export-row">
+          {EXPORT_FORMATS.map(fmt => (
+            <button
+              key={fmt}
+              className="btn sm"
+              onClick={() => handleExport(fmt)}
+              disabled={exporting === fmt}
+            >
+              {exporting === fmt ? '…' : fmt.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── History view ─────────────────────────────────────────────────────────────
+function HistoryView({ jobs, onSelect, onDeleteJob, loading }) {
+  const [q, setQ] = useState('');
+  const filtered = jobs.filter(j =>
+    !q || (j.filename || '').toLowerCase().includes(q.toLowerCase()) ||
+    (j.transcription || '').toLowerCase().includes(q.toLowerCase())
+  );
+
+  return (
+    <div style={{ padding: '24px 32px' }}>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">History</h1>
+          <p className="page-sub">All your previous transcriptions and translations.</p>
+        </div>
+      </div>
+
+      <div className="url-input" style={{ marginBottom: 24 }}>
+        <span className="ico">{I.search}</span>
+        <input
+          placeholder="Search transcriptions…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
+      </div>
+
+      {loading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+
+      {!loading && filtered.length === 0 && (
+        <p style={{ color: 'var(--muted)' }}>No jobs yet. Transcribe something to get started.</p>
+      )}
+
+      <div className="recent-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+        {filtered.map(job => (
+          <RecentCard key={job.id} job={job} onSelect={onSelect} onDelete={onDeleteJob} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Live recording view ──────────────────────────────────────────────────────
+function LiveView({ source, onJobCreated }) {
+  const [status, setStatus] = useState('idle'); // idle | recording | processing | error
+  const [liveText, setLiveText] = useState('');
+  const [elapsed, setElapsed] = useState(0);
+  const [errMsg, setErrMsg] = useState('');
+  const mrRef = useRef(null);
+  const wsRef = useRef(null);
+  const timerRef = useRef(null);
+
+  const stopTimer = () => { clearInterval(timerRef.current); };
+
+  const start = async () => {
+    setErrMsg('');
+    setLiveText('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ws = openLiveSocket({ language: source === 'auto' ? 'el' : source, task: 'transcribe', ext: 'webm' });
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        mr.ondataavailable = (e) => {
+          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+        };
+        mr.start(500);
+        mrRef.current = mr;
+        setStatus('recording');
+        setElapsed(0);
+        timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'partial' && data.text) setLiveText(data.text);
+          if (data.type === 'final') {
+            stopTimer();
+            if (data.jobId) {
+              onJobCreated(data.jobId);
+            } else {
+              setStatus('idle');
+            }
+          }
+          if (data.type === 'error') {
+            setErrMsg(data.message || 'Transcription failed');
+            setStatus('error');
+            stopTimer();
+          }
+        } catch { }
+      };
+
+      ws.onerror = () => {
+        setErrMsg('WebSocket error — is the server running?');
+        setStatus('error');
+        stopTimer();
+      };
+
+      ws.onclose = () => {
+        // If still "processing", server closed unexpectedly
+        setStatus(s => s === 'processing' ? 'error' : s);
+      };
+
+    } catch (err) {
+      setErrMsg('Microphone access denied: ' + err.message);
+      setStatus('error');
+    }
+  };
+
+  const stop = () => {
+    const ws = wsRef.current;
+    const mr = mrRef.current;
+    stopTimer();
+    setStatus('processing');
+
+    // Stop MediaRecorder — let ondataavailable flush remaining chunks
+    if (mr && mr.state !== 'inactive') {
+      mr.addEventListener('stop', () => {
+        // All chunks flushed — now tell server to finalize
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'close' }));
+        }
+      }, { once: true });
+      mr.stop();
+    } else if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'close' }));
+    }
+
+    // Stop mic stream
+    mr?.stream?.getTracks().forEach(t => t.stop());
+  };
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    stopTimer();
+    mrRef.current?.stream?.getTracks().forEach(t => t.stop());
+    wsRef.current?.close();
+  }, []);
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  return (
+    <div style={{ padding: '24px 32px' }}>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Live recording</h1>
+          <p className="page-sub">Speak and see captions appear in real time. Auto-saved when you stop.</p>
+        </div>
+      </div>
+
+      <div className="mic" style={{ marginBottom: 24 }}>
+        <button
+          className={`mic-btn ${status === 'recording' ? 'active' : ''}`}
+          onClick={status === 'recording' ? stop : status === 'idle' || status === 'error' ? start : undefined}
+          disabled={status === 'processing'}
+          style={status === 'recording' ? { background: 'var(--accent)', color: '#fff' } : {}}
+        >
+          {status === 'processing' ? '…' : status === 'recording' ? '⏹' : I.mic}
+        </button>
+        <div className="mic-meta">
+          {status === 'recording' && (
+            <>
+              <h4 style={{ color: 'var(--accent)' }}>Recording {mm}:{ss}</h4>
+              <p>Click stop when done · transcript will be saved automatically</p>
+            </>
+          )}
+          {status === 'processing' && (
+            <>
+              <h4>Transcribing…</h4>
+              <p>Sending to Whisper · this takes a few seconds</p>
+            </>
+          )}
+          {status === 'error' && (
+            <>
+              <h4 style={{ color: '#c7522a' }}>Error</h4>
+              <p style={{ color: '#c7522a' }}>{errMsg}</p>
+            </>
+          )}
+          {status === 'idle' && (
+            <>
+              <h4>Start recording</h4>
+              <p>Live captions in 25+ languages · auto-saved on stop</p>
+            </>
+          )}
+        </div>
+        {status === 'recording' && (
+          <div className="wave">
+            {Array.from({ length: 28 }).map((_, i) => (
+              <span key={i} style={{ height: `${8 + Math.abs(Math.sin(i * 0.6)) * 22}px` }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {errMsg && status === 'error' && (
+        <div style={{ background: 'var(--accent-soft)', border: '1px solid #c7522a33', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#c7522a', marginBottom: 16 }}>
+          <strong>Needs OPENAI_API_KEY</strong> in server <code>.env</code> for live transcription to work.
+          Check server is running on port 3000.
+        </div>
+      )}
+
+      {liveText && (
+        <div className="pane" style={{ minHeight: 200 }}>
+          <div className="pane-head">
+            <div className="pane-lang">Live transcript</div>
+          </div>
+          <div className="pane-body">
+            <p className="speaker">{liveText}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Glossary view ────────────────────────────────────────────────────────────
+function GlossaryView() {
+  const [glossaries, setGlossaries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newTerms, setNewTerms] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await listGlossaries();
+      setGlossaries(data.glossaries || data || []);
+    } catch { }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    // Backend expects entries: { sourceWord: targetWord } object, not array
+    const entries = {};
+    newTerms.split('\n').forEach(line => {
+      const [src, ...rest] = line.split('=');
+      if (src?.trim() && rest.length) entries[src.trim()] = rest.join('=').trim();
+    });
+    try {
+      await createGlossary({ name: newName.trim(), entries });
+      setCreating(false);
+      setNewName('');
+      setNewTerms('');
+      load();
+    } catch (err) {
+      alert('Create failed: ' + err.message);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this glossary?')) return;
+    try {
+      await deleteGlossary(id);
+      load();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  };
+
+  return (
+    <div style={{ padding: '24px 32px' }}>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Glossary</h1>
+          <p className="page-sub">Save word pairs to ensure consistent translation of technical terms.</p>
+        </div>
+        <button className="btn accent sm" onClick={() => setCreating(true)}>+ New glossary</button>
+      </div>
+
+      {creating && (
+        <div className="pane" style={{ marginBottom: 24 }}>
+          <div className="pane-head"><div className="pane-lang">New glossary</div></div>
+          <div className="pane-body" style={{ padding: 16 }}>
+            <input
+              placeholder="Glossary name"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              style={{ width: '100%', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', color: 'var(--ink)' }}
+            />
+            <textarea
+              placeholder={"One term per line: source = translation\ne.g. Whisper = Whisper\nOpenAI = OpenAI"}
+              value={newTerms}
+              onChange={e => setNewTerms(e.target.value)}
+              rows={6}
+              style={{ width: '100%', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', color: 'var(--ink)', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn accent sm" onClick={handleCreate}>Create</button>
+              <button className="btn sm" onClick={() => setCreating(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+
+      {!loading && glossaries.length === 0 && !creating && (
+        <p style={{ color: 'var(--muted)' }}>No glossaries yet. Create one to improve translation consistency.</p>
+      )}
+
+      {glossaries.map(g => (
+        <div key={g.id} className="pane" style={{ marginBottom: 16 }}>
+          <div className="pane-head">
+            <div className="pane-lang">{g.name}</div>
+            <div className="pane-tools">
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginRight: 8 }}>
+                {Object.keys(g.entries || {}).length} terms
+              </span>
+              <div className="pane-tool" title="Delete" onClick={() => handleDelete(g.id)}>✕</div>
+            </div>
+          </div>
+          {Object.keys(g.entries || {}).length > 0 && (
+            <div className="pane-body" style={{ padding: '8px 16px' }}>
+              {Object.entries(g.entries || {}).slice(0, 5).map(([src, tgt], i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0', fontFamily: 'var(--font-mono)' }}>
+                  <span style={{ color: 'var(--ink)', minWidth: 120 }}>{src}</span>
+                  <span style={{ color: 'var(--muted)' }}>→</span>
+                  <span style={{ color: 'var(--ink-2)' }}>{tgt}</span>
+                </div>
+              ))}
+              {Object.keys(g.entries || {}).length > 5 && (
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                  +{Object.keys(g.entries).length - 5} more
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Settings view ────────────────────────────────────────────────────────────
+function SettingsView({ apiKey, onApiKeyChange, accent, onAccentChange, theme, onThemeChange }) {
+  const [draftKey, setDraftKey] = useState(apiKey);
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    onApiKeyChange(draftKey.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div style={{ padding: '24px 32px', maxWidth: 560 }}>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-sub">Configure your Translator workspace.</p>
+        </div>
+      </div>
+
+      <div className="pane" style={{ marginBottom: 20 }}>
+        <div className="pane-head"><div className="pane-lang">API Key</div></div>
+        <div className="pane-body" style={{ padding: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+            Required when the server has <code>API_KEYS_REQUIRED=true</code>.
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="password"
+              placeholder="Paste your API key…"
+              value={draftKey}
+              onChange={e => setDraftKey(e.target.value)}
+              style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', color: 'var(--ink)' }}
+            />
+            <button className="btn accent sm" onClick={save}>{saved ? 'Saved ✓' : 'Save'}</button>
+            {draftKey && (
+              <button className="btn sm" onClick={() => { setDraftKey(''); onApiKeyChange(''); }}>Clear</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="pane" style={{ marginBottom: 20 }}>
+        <div className="pane-head"><div className="pane-lang">Appearance</div></div>
+        <div className="pane-body" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {['light', 'dark'].map(t => (
+              <button
+                key={t}
+                className={`btn sm ${theme === t ? 'accent' : ''}`}
+                onClick={() => onThemeChange(t)}
+                style={{ textTransform: 'capitalize' }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>Accent color</p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {ACCENTS.map(c => (
+              <div
+                key={c}
+                onClick={() => onAccentChange(c)}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%', background: c, cursor: 'pointer',
+                  border: accent === c ? '2px solid var(--ink)' : '2px solid transparent',
+                  outline: accent === c ? '2px solid var(--bg)' : 'none',
+                  outlineOffset: 1,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Error banner ─────────────────────────────────────────────────────────────
+function ErrorBanner({ message, onDismiss }) {
+  if (!message) return null;
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      background: '#c7522a', color: '#fff', padding: '12px 20px', borderRadius: 10,
+      zIndex: 9999, display: 'flex', gap: 12, alignItems: 'center', maxWidth: 480,
+      boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+    }}>
+      <span style={{ flex: 1, fontSize: 14 }}>{message}</span>
+      <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 18 }}>✕</button>
+    </div>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+export default function App() {
+  // Persisted prefs
+  const [theme, setTheme] = useState(() => localStorage.getItem('t_theme') || 'light');
+  const [accent, setAccent] = useState(() => localStorage.getItem('t_accent') || '#1f5d4c');
+  const [apiKey, setApiKeyState] = useState(() => getApiKey());
+
+  // Nav
+  const [activeView, setActiveView] = useState('transcribe');
+
+  // Transcribe flow
+  const [appState, setAppState] = useState('empty'); // empty | transcribing | result
+  const [mode, setMode] = useState('file');
+  const [source, setSource] = useState('auto');
+  const [target, setTarget] = useState('en');
+  const [detectedLang, setDetectedLang] = useState(null);
+
+  // Lang picker
+  const [pickingLang, setPickingLang] = useState(null); // 'source' | 'target' | null
+
+  // Job state
+  const [currentJob, setCurrentJob] = useState(null);
+  const [translatedJob, setTranslatedJob] = useState(null);
+  const [translating, setTranslating] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+
+  // History
+  const [jobs, setJobs] = useState([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+
+  // Refine
+  const [refineHistory, setRefineHistory] = useState([]);
+  const [refining, setRefining] = useState(false);
+
+  // Error
+  const [error, setError] = useState(null);
+
+  // Apply theme + accent
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.setProperty('--accent', accent);
+    document.documentElement.style.setProperty('--accent-soft', hexToSoft(accent, theme === 'dark'));
+    localStorage.setItem('t_theme', theme);
+    localStorage.setItem('t_accent', accent);
+  }, [theme, accent]);
+
+  // Load jobs on history view
+  useEffect(() => {
+    if (activeView === 'history' || activeView === 'transcribe') {
+      loadJobs();
+    }
+  }, [activeView]);
+
+  const loadJobs = async () => {
+    setLoadingJobs(true);
+    try {
+      const data = await listJobs({ limit: 50 });
+      setJobs(data.jobs || data || []);
+    } catch { }
+    setLoadingJobs(false);
+  };
+
+  // ── actions ──
+
+  const handleApiKeyChange = (key) => {
+    setApiKey(key);
+    setApiKeyState(key);
+  };
+
+  const handleThemeToggle = () => setTheme(t => t === 'light' ? 'dark' : 'light');
+
+  const handleSwap = () => {
+    const s = source;
+    setSource(target === 'auto' ? 'en' : target);
+    setTarget(s === 'auto' ? 'en' : s);
+  };
+
+  const reset = () => {
+    setAppState('empty');
+    setCurrentJob(null);
+    setTranslatedJob(null);
+    setRefineHistory([]);
+    setPendingFile(null);
+    setDetectedLang(null);
+  };
+
+  const startTranscribe = async (file, url) => {
+    setAppState('transcribing');
+    setError(null);
+    // Capture file info in local vars — state update is async so pendingFile
+    // won't reflect yet when we normalize the response below
+    const fileName = file?.name || null;
+    const fileSize = file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : null;
+    if (file) setPendingFile({ name: fileName, size: fileSize });
+    try {
+      let job;
+      if (file) {
+        job = await transcribeFile(file, {
+          task: 'transcribe',
+          language: source === 'auto' ? undefined : source,
+          wordTimestamps: true,
+        });
+      } else {
+        job = await ingestUrl(url, {
+          task: 'transcribe',
+          language: source === 'auto' ? undefined : source,
+          wordTimestamps: true,
+        });
+      }
+      if (job.language) setDetectedLang(langInfo(job.language).name);
+      // Normalize: backend returns jobId not id, may lack filename/title
+      const normalized = {
+        ...job,
+        id: job.id || job.jobId,
+        filename: job.filename || job.title || fileName || url || 'Recording',
+      };
+      setCurrentJob(normalized);
+      setAppState('result');
+      loadJobs();
+    } catch (err) {
+      setError(err.message || 'Transcription failed');
+      setAppState('empty');
+    }
+  };
+
+  const handleFile = (file) => startTranscribe(file, null);
+  const handleUrl = (url) => startTranscribe(null, url);
+
+  const handleTranslate = async () => {
+    if (!currentJob) return;
+    setTranslating(true);
+    setError(null);
+    try {
+      // Backend returns { jobId } metadata only — fetch full job to get segments
+      const meta = await translateJobSegments(currentJob.id, target, source === 'auto' ? currentJob.language : source);
+      const jobId = meta.jobId || meta.id;
+      if (!jobId) throw new Error('No jobId in translation response');
+      const full = await getJob(jobId);
+      setTranslatedJob(full?.job || full);
+    } catch (err) {
+      setError(err.message || 'Translation failed');
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const handleRefine = async (message) => {
+    if (!currentJob || refining) return;
+    setRefining(true);
+    try {
+      const res = await chatRefine({
+        message,
+        transcription: currentJob.transcription,
+        // Alternate user/assistant for proper history format
+        history: refineHistory.flatMap(h => [
+          { role: 'user', content: h.q },
+          { role: 'assistant', content: h.a },
+        ]),
+      });
+      // Backend returns { response: text } — not reply/text
+      setRefineHistory(h => [...h, { q: message, a: res.response || res.refinedTranscription || '' }]);
+    } catch (err) {
+      setError(err.message || 'Refine failed');
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const handleSelectJob = async (job) => {
+    const id = job.id || job.jobId;
+    setAppState('result');
+    setActiveView('transcribe');
+    setTranslatedJob(null);
+    setRefineHistory([]);
+
+    // List view strips segments — fetch full job so transcript renders
+    try {
+      const data = await getJob(id);
+      const full = data?.job || data || job;
+      const normalized = {
+        ...full,
+        id: full.id || id,
+        transcription: full.transcription || full.text || '',
+        filename: full.filename || full.sourceName || full.title || id,
+      };
+      setCurrentJob(normalized);
+      if (normalized.language) setDetectedLang(langInfo(normalized.language).name);
+    } catch {
+      // Fallback to passed-in stub so UI at least shows something
+      const normalized = {
+        ...job,
+        id,
+        transcription: job.transcription || job.text || '',
+        filename: job.filename || job.sourceName || job.title || id,
+      };
+      setCurrentJob(normalized);
+      if (normalized.language) setDetectedLang(langInfo(normalized.language).name);
+    }
+  };
+
+  const handleDeleteJob = async (id) => {
+    try {
+      await deleteJob(id);
+      setJobs(j => j.filter(jj => jj.id !== id));
+      if (currentJob?.id === id) reset();
+    } catch (err) {
+      setError(err.message || 'Delete failed');
+    }
+  };
+
+  const handleLiveJobCreated = async (jobId) => {
+    try {
+      const data = await getJob(jobId);
+      if (data?.job) handleSelectJob(data.job);
+      else if (data?.id) handleSelectJob(data);
+    } catch { }
+  };
+
+  // ── render ──
+
+  const renderTranscribeView = () => (
+    <>
+      <Topbar
+        appState={appState}
+        title={currentJob?.filename}
+        onReset={reset}
+      />
+      <div className="content">
+        {appState === 'empty' && (
+          <>
+            <div className="page-head">
+              <div>
+                <h1 className="page-title">Translate <em>anything</em> you can hear.</h1>
+                <p className="page-sub">Upload, paste a link, or record live. We'll transcribe and translate in seconds.</p>
+              </div>
+            </div>
+            <LangBar
+              source={source} target={target}
+              onSwap={handleSwap}
+              onPickSource={() => setPickingLang('source')}
+              onPickTarget={() => setPickingLang('target')}
+              detectedLang={detectedLang}
+            />
+            <Modes mode={mode} onChange={setMode} />
+            {mode === 'file' && <FileDrop onFile={handleFile} />}
+            {mode === 'url' && <UrlInput onUrl={handleUrl} />}
+            {mode === 'mic' && <MicPanel onStart={() => setActiveView('live')} />}
+            <RecentSection jobs={jobs} onSelect={handleSelectJob} onDeleteJob={handleDeleteJob} />
+          </>
+        )}
+
+        {appState === 'transcribing' && (
+          <>
+            <div className="page-head">
+              <div>
+                <h1 className="page-title">Listening<em>…</em></h1>
+                <p className="page-sub">This usually takes about a minute per 10 minutes of audio.</p>
+              </div>
+            </div>
+            <Transcribing
+              fileName={pendingFile?.name}
+              fileSize={pendingFile?.size}
+            />
+          </>
+        )}
+
+        {appState === 'result' && currentJob && (
+          <>
+            <div className="page-head">
+              <div>
+                <h1 className="page-title">{currentJob.filename || 'Transcript'}</h1>
+                <p className="page-sub">
+                  {detectedLang ? `Auto-detected ${detectedLang}` : langInfo(source).name} → {langInfo(target).name}
+                  {currentJob.createdAt ? ` · ${new Date(currentJob.createdAt).toLocaleDateString()}` : ''}
+                </p>
+              </div>
+              <LangBar
+                source={currentJob.language || source}
+                target={target}
+                onSwap={handleSwap}
+                onPickSource={() => setPickingLang('source')}
+                onPickTarget={() => setPickingLang('target')}
+              />
+            </div>
+            <ResultView
+              job={currentJob}
+              translatedJob={translatedJob}
+              source={currentJob.language || source}
+              target={target}
+              onTranslate={handleTranslate}
+              translating={translating}
+              refineHistory={refineHistory}
+              onRefine={handleRefine}
+            />
+          </>
+        )}
+      </div>
+    </>
+  );
+
+  return (
+    <div className="app">
+      <Sidebar
+        activeView={activeView}
+        onNav={(v) => { setActiveView(v); }}
+        jobCount={jobs.length}
+        theme={theme}
+        onThemeToggle={handleThemeToggle}
+        apiKey={apiKey}
+      />
+
+      <div className="main">
+        {activeView === 'transcribe' && renderTranscribeView()}
+
+        {activeView === 'live' && (
+          <>
+            <div className="topbar">
+              <div className="breadcrumb"><b>Live</b></div>
+            </div>
+            <div className="content">
+              <LiveView source={source} onJobCreated={handleLiveJobCreated} />
+            </div>
+          </>
+        )}
+
+        {activeView === 'history' && (
+          <>
+            <div className="topbar">
+              <div className="breadcrumb"><b>History</b></div>
+            </div>
+            <div className="content">
+              <HistoryView
+                jobs={jobs}
+                onSelect={handleSelectJob}
+                onDeleteJob={handleDeleteJob}
+                loading={loadingJobs}
+              />
+            </div>
+          </>
+        )}
+
+        {activeView === 'glossary' && (
+          <>
+            <div className="topbar">
+              <div className="breadcrumb"><b>Glossary</b></div>
+            </div>
+            <div className="content">
+              <GlossaryView />
+            </div>
+          </>
+        )}
+
+        {activeView === 'settings' && (
+          <>
+            <div className="topbar">
+              <div className="breadcrumb"><b>Settings</b></div>
+            </div>
+            <div className="content">
+              <SettingsView
+                apiKey={apiKey}
+                onApiKeyChange={handleApiKeyChange}
+                accent={accent}
+                onAccentChange={setAccent}
+                theme={theme}
+                onThemeChange={setTheme}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Language picker modal */}
+      {pickingLang && (
+        <LangPicker
+          value={pickingLang === 'source' ? source : target}
+          excludeAuto={pickingLang === 'target'}
+          onChange={(code) => {
+            if (pickingLang === 'source') setSource(code);
+            else setTarget(code);
+          }}
+          onClose={() => setPickingLang(null)}
+        />
+      )}
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+    </div>
+  );
+}

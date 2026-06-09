@@ -1,0 +1,27 @@
+services:
+  translator:
+    build: .
+    image: translator:latest
+    container_name: translator
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+    volumes:
+      - translator-data:/app/data
+      - translator-uploads:/app/uploads
+      - translator-temp:/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q '\"status\":\"ok\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  translator-data:
+  translator-uploads:
+  translator-temp:

@@ -2,6 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import { transcribeAudio } from '../utils/transcription.js';
 import { transcribeAudioLocal } from '../utils/localTranscription.js';
+import { createJob } from '../db/index.js';
+import { needsChunking, splitAudio, mergeTranscriptions } from '../utils/audioChunk.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs/promises';
@@ -11,7 +13,6 @@ const __dirname = dirname(__filename);
 
 const router = express.Router();
 
-// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = join(__dirname, '../../uploads');
@@ -19,25 +20,24 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
 
+const AUDIO_MIME = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave',
+  'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
+  'audio/flac', 'audio/ogg', 'audio/webm', 'audio/amr',
+  'audio/3gpp', 'audio/aac', 'audio/x-aac'
+]);
+
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // Accept audio files
-    const audioMimeTypes = [
-      'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave',
-      'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
-      'audio/flac', 'audio/ogg', 'audio/webm', 'audio/amr',
-      'audio/3gpp', 'audio/aac', 'audio/x-aac'
-    ];
-    
-    if (audioMimeTypes.includes(file.mimetype) || 
-        file.originalname.match(/\.(mp3|wav|m4a|flac|ogg|webm|amr|3gp|aac)$/i)) {
+    if (AUDIO_MIME.has(file.mimetype) ||
+        file.originalname.match(/\.(mp3|wav|m4a|flac|ogg|webm|amr|3gp|aac|mp4)$/i)) {
       cb(null, true);
     } else {
       cb(new Error('Only audio files are allowed'), false);
@@ -45,91 +45,120 @@ const upload = multer({
   }
 });
 
-// Transcribe audio file
-router.post('/', upload.single('audio'), async (req, res) => {
+/**
+ * POST /api/transcribe
+ * Multipart form-data:
+ *   audio               (file, required)
+ *   language            (string, default 'el') — source language for transcribe task
+ *   task                ('transcribe' | 'translate', default 'transcribe')
+ *                       'translate' uses Whisper's English-output mode.
+ *   prompt              (string, optional)    — vocabulary hint
+ *   word_timestamps     ('true' | 'false')    — include word-level granularity
+ */
+router.post('/', upload.single('audio'), async (req, res, next) => {
+  let filePath;
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
+    filePath = req.file.path;
 
-    // No longer required - we can use local transcription as fallback
+    const task = req.body.task === 'translate' ? 'translate' : 'transcribe';
+    const language = req.body.language || 'el';
+    const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
+    const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
 
-    console.log(`📝 Transcribing file: ${req.file.filename}`);
+    console.log(`[transcribe] file=${req.file.filename} task=${task} lang=${language}`);
 
     let transcription;
-    let useLocal = false;
+    let method = 'openai';
 
-    // Try OpenAI first if API key is available
     if (process.env.OPENAI_API_KEY) {
       try {
-        console.log('Attempting transcription with OpenAI API...');
-        transcription = await transcribeAudio(req.file.path, {
-          language: req.body.language || 'el', // Default to Greek
-          prompt: req.body.prompt || '',
-          response_format: 'verbose_json'
-        });
-        console.log('✓ OpenAI transcription successful');
-      } catch (openaiError) {
-        // If quota exceeded or API unavailable, fall back to local
-        const isQuotaError = openaiError.message?.includes('quota') || 
-                            openaiError.message?.includes('billing') ||
-                            openaiError.message?.includes('exceeded') ||
-                            openaiError.status === 429;
-        
-        if (isQuotaError || !openaiError.status) {
-          console.log('⚠ OpenAI API unavailable (quota exceeded or connection issue)');
-          console.log('🔄 Falling back to FREE local Whisper transcription...');
-          useLocal = true;
+        const big = await needsChunking(filePath);
+        if (big) {
+          console.log('[transcribe] file exceeds 24MB — chunking via ffmpeg');
+          const { chunks, cleanup } = await splitAudio(filePath);
+          try {
+            const parts = [];
+            for (const chunk of chunks) {
+              const result = await transcribeAudio(chunk.path, {
+                task,
+                language,
+                prompt: req.body.prompt || '',
+                response_format: 'verbose_json',
+                timestamp_granularities: granularities
+              });
+              parts.push({ result, startSec: chunk.startSec });
+            }
+            transcription = mergeTranscriptions(parts);
+          } finally {
+            await cleanup();
+          }
         } else {
-          // For other errors, throw immediately
-          throw openaiError;
+          transcription = await transcribeAudio(filePath, {
+            task,
+            language,
+            prompt: req.body.prompt || '',
+            response_format: 'verbose_json',
+            timestamp_granularities: granularities
+          });
         }
+      } catch (err) {
+        const recoverable = /quota|billing|exceeded|Connection/i.test(err.message || '');
+        if (!recoverable) throw err;
+        console.log('[transcribe] OpenAI failed, falling back to local Whisper');
+        method = 'local';
       }
     } else {
-      console.log('ℹ No OpenAI API key configured, using FREE local Whisper...');
-      useLocal = true;
+      method = 'local';
     }
 
-    // Use local transcription if OpenAI failed or not configured
-    if (useLocal) {
-      transcription = await transcribeAudioLocal(req.file.path, {
-        language: req.body.language || 'el'
-      });
-      console.log('✓ Local transcription successful');
+    if (method === 'local') {
+      // Local fallback does not support translate task — warn caller.
+      if (task === 'translate') {
+        return res.status(503).json({
+          error: 'Translate task requires OPENAI_API_KEY (local Whisper fallback does not support audio→English translation in this build).'
+        });
+      }
+      transcription = await transcribeAudioLocal(filePath, { language });
     }
 
-    // Clean up uploaded file
-    await fs.unlink(req.file.path).catch(() => {});
+    await fs.unlink(filePath).catch(() => {});
+    filePath = null;
+
+    const job = await createJob({
+      type: 'transcription',
+      sourceName: req.file.originalname,
+      language: transcription.language || language,
+      task,
+      method,
+      duration: transcription.duration || null,
+      text: transcription.text,
+      segments: transcription.segments || [],
+      meta: { words: transcription.words || null }
+    });
 
     res.json({
       success: true,
+      jobId: job.id,
       transcription: transcription.text,
       segments: transcription.segments || [],
+      words: transcription.words || [],
       language: transcription.language,
       duration: transcription.duration,
-      method: useLocal ? 'local' : 'openai'
+      task,
+      method
     });
-
   } catch (error) {
-    console.error('Transcription error:', error);
-    
-    // Clean up file on error
-    if (req.file) {
-      await fs.unlink(req.file.path).catch(() => {});
-    }
-
-    res.status(500).json({
-      error: 'Transcription failed',
-      message: error.message
-    });
+    if (filePath) await fs.unlink(filePath).catch(() => {});
+    next(error);
   }
 });
 
-// Get transcription status (for long files)
 router.get('/status/:id', (req, res) => {
-  // Placeholder for async transcription status
+  // Placeholder for async transcription status (future queue worker).
   res.json({ status: 'completed' });
 });
 
 export default router;
-

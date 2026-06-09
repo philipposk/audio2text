@@ -128,3 +128,6 @@ Once DNS propagates:
 4. **Contact Papaki support:**
    - If DNS changes aren't taking effect after 24 hours
 
+
+
+

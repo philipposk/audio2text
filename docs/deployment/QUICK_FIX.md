@@ -64,3 +64,6 @@ The most reliable way to debug:
 4. Click on `/api/transcribe`
 5. Check the logs - they'll show the exact error
 
+
+
+
