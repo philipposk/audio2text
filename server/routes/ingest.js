@@ -78,7 +78,10 @@ router.post('/', async (req, res, next) => {
 
     const tmpDir = join(__dirname, '../../uploads');
     await fs.mkdir(tmpDir, { recursive: true });
-    const outTemplate = join(tmpDir, `ingest-${Date.now()}.%(ext)s`);
+    // Unique token per request so concurrent ingests never pick up each other's
+    // downloaded file (a shared `ingest-<timestamp>` prefix + dir-glob would race).
+    const reqToken = `ingest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const outTemplate = join(tmpDir, `${reqToken}.%(ext)s`);
 
     console.log(`[ingest] downloading ${url}`);
     const info = await youtubeDl(url, {
@@ -92,11 +95,10 @@ router.post('/', async (req, res, next) => {
       printJson: true
     });
 
-    // youtube-dl-exec returns parsed JSON when printJson is true; the actual
-    // filepath is the template with %(ext)s replaced. We just glob the dir.
+    // Match ONLY this request's token, so a parallel ingest's file is invisible.
     const files = await fs.readdir(tmpDir);
     const match = files
-      .filter((f) => f.startsWith(`ingest-`) && f.endsWith('.mp3'))
+      .filter((f) => f.startsWith(reqToken) && f.endsWith('.mp3'))
       .sort()
       .reverse();
     if (match.length === 0) {

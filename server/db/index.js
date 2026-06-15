@@ -94,12 +94,23 @@ async function sb_createJob(payload) {
   return jobFromRow(data);
 }
 
+// Neutralize characters that have meaning in PostgREST's .or() filter grammar
+// so a search term cannot inject extra filter conditions. Reserved: , . ( ) ":*
+// and the ilike wildcards % _. We strip them rather than escape — a search box
+// has no legitimate need for them, and stripping keeps the query simple.
+function sanitizePostgrest(term) {
+  return String(term).replace(/[,.()":*%_\\]/g, ' ').trim().slice(0, 200);
+}
+
 async function sb_listJobs({ limit = 50, offset = 0, q, language, task, type } = {}) {
   let query = sb().from('translator_jobs').select('id,created_at,type,source_name,language,task,method,duration,segments', { count: 'exact' });
   if (language) query = query.eq('language', language);
   if (task) query = query.eq('task', task);
   if (type) query = query.eq('type', type);
-  if (q) query = query.or(`text.ilike.%${q}%,source_name.ilike.%${q}%`);
+  if (q) {
+    const safe = sanitizePostgrest(q);
+    if (safe) query = query.or(`text.ilike.%${safe}%,source_name.ilike.%${safe}%`);
+  }
   query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
@@ -401,27 +412,44 @@ async function lo_deleteGlossary(glossaryId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PUBLIC API — dispatch to correct adapter
+// PUBLIC API — lazy dispatch to correct adapter
+//
+// The adapter is chosen on FIRST call (memoized), never at import time. This
+// avoids a subtle data-loss trap: server/index.js runs dotenv.config() AFTER its
+// route imports, which transitively import this module. If we picked the adapter
+// at import time, process.env.SUPABASE_URL would still be unset and we'd silently
+// fall back to lowdb even when Supabase is configured. Deciding lazily means the
+// first real DB call happens long after env vars are loaded.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const use = useSupabase();
+let _useSupabase = null;
+function adapterChosen() {
+  if (_useSupabase === null) _useSupabase = useSupabase();
+  return _useSupabase;
+}
 
-export const createJob       = use ? sb_createJob       : lo_createJob;
-export const listJobs        = use ? sb_listJobs        : lo_listJobs;
-export const getJob          = use ? sb_getJob          : lo_getJob;
-export const updateJob       = use ? sb_updateJob       : lo_updateJob;
-export const deleteJob       = use ? sb_deleteJob       : lo_deleteJob;
+// Build a dispatcher that routes to the Supabase or lowdb implementation on each
+// call, resolving the adapter lazily and memoizing the choice.
+function dispatch(sbFn, loFn) {
+  return (...args) => (adapterChosen() ? sbFn : loFn)(...args);
+}
 
-export const createApiKey    = use ? sb_createApiKey    : lo_createApiKey;
-export const findApiKey      = use ? sb_findApiKey      : lo_findApiKey;
-export const listApiKeys     = use ? sb_listApiKeys     : lo_listApiKeys;
-export const revokeApiKey    = use ? sb_revokeApiKey    : lo_revokeApiKey;
+export const createJob       = dispatch(sb_createJob,       lo_createJob);
+export const listJobs        = dispatch(sb_listJobs,        lo_listJobs);
+export const getJob          = dispatch(sb_getJob,          lo_getJob);
+export const updateJob       = dispatch(sb_updateJob,       lo_updateJob);
+export const deleteJob       = dispatch(sb_deleteJob,       lo_deleteJob);
 
-export const recordUsage     = use ? sb_recordUsage     : lo_recordUsage;
-export const getUsageToday   = use ? sb_getUsageToday   : lo_getUsageToday;
+export const createApiKey    = dispatch(sb_createApiKey,    lo_createApiKey);
+export const findApiKey      = dispatch(sb_findApiKey,      lo_findApiKey);
+export const listApiKeys     = dispatch(sb_listApiKeys,     lo_listApiKeys);
+export const revokeApiKey    = dispatch(sb_revokeApiKey,    lo_revokeApiKey);
 
-export const createGlossary  = use ? sb_createGlossary  : lo_createGlossary;
-export const listGlossaries  = use ? sb_listGlossaries  : lo_listGlossaries;
-export const getGlossary     = use ? sb_getGlossary     : lo_getGlossary;
-export const updateGlossary  = use ? sb_updateGlossary  : lo_updateGlossary;
-export const deleteGlossary  = use ? sb_deleteGlossary  : lo_deleteGlossary;
+export const recordUsage     = dispatch(sb_recordUsage,     lo_recordUsage);
+export const getUsageToday   = dispatch(sb_getUsageToday,   lo_getUsageToday);
+
+export const createGlossary  = dispatch(sb_createGlossary,  lo_createGlossary);
+export const listGlossaries  = dispatch(sb_listGlossaries,  lo_listGlossaries);
+export const getGlossary     = dispatch(sb_getGlossary,     lo_getGlossary);
+export const updateGlossary  = dispatch(sb_updateGlossary,  lo_updateGlossary);
+export const deleteGlossary  = dispatch(sb_deleteGlossary,  lo_deleteGlossary);

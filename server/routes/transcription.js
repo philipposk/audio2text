@@ -21,7 +21,11 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    // Strip any path separators / traversal sequences from the client-supplied
+    // name before it becomes part of a real path. multer joins this onto the
+    // upload dir verbatim, so an originalname like "../../x" must be neutralized.
+    const safeName = file.originalname.replace(/[/\\]/g, '_').replace(/\.{2,}/g, '_').slice(0, 180);
+    cb(null, uniqueSuffix + '-' + safeName);
   }
 });
 

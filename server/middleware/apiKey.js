@@ -16,6 +16,7 @@
 //     dailyMinutes*60, subsequent calls return 429.
 
 import { findApiKey, getUsageToday, recordUsage } from '../db/index.js';
+import { safeEqual } from '../utils/safeCompare.js';
 
 function extractKey(req) {
   const headerKey = req.header('x-api-key');
@@ -33,7 +34,7 @@ export async function attachApiKey(req, res, next) {
     const raw = extractKey(req);
 
     // Admin shortcut: ADMIN_API_KEY bypasses lookup and quotas entirely.
-    if (raw && process.env.ADMIN_API_KEY && raw === process.env.ADMIN_API_KEY) {
+    if (raw && process.env.ADMIN_API_KEY && safeEqual(raw, process.env.ADMIN_API_KEY)) {
       req.apiKey = { key: raw, label: 'admin', plan: 'admin', dailyMinutes: Infinity, admin: true };
       return next();
     }

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { transcribeAudio } from '../utils/transcription.js';
 import { createJob } from '../db/index.js';
+import { safeEqual } from '../utils/safeCompare.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,7 +68,7 @@ router.post('/telegram', async (req, res) => {
     return res.status(501).json({ error: 'TELEGRAM_BOT_TOKEN not configured' });
   }
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret && req.query.secret !== secret) {
+  if (secret && !safeEqual(String(req.query.secret || ''), secret)) {
     return res.status(403).json({ error: 'Bad webhook secret' });
   }
 
@@ -92,7 +93,8 @@ router.post('/telegram', async (req, res) => {
       const tgPath = await tgGetFile(token, fileId);
       const localDir = join(__dirname, '../../uploads/telegram');
       await fsp.mkdir(localDir, { recursive: true });
-      const localPath = join(localDir, `${Date.now()}-${fileId}.ogg`);
+      const safeId = String(fileId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+      const localPath = join(localDir, `${Date.now()}-${safeId}.ogg`);
       await tgDownload(token, tgPath, localPath);
 
       try {

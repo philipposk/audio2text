@@ -1,6 +1,6 @@
+import './env.js'; // must be first — loads .env before any module reads process.env
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import expressWs from 'express-ws';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -30,7 +30,6 @@ import { openApiSpec } from './openapi.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '../.env') });
 
 /**
  * Build the Express app. Exported so tests can mount it without binding a port.
