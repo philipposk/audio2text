@@ -68,7 +68,9 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
     filePath = req.file.path;
 
     const task = req.body.task === 'translate' ? 'translate' : 'transcribe';
-    const language = req.body.language || 'el';
+    // Default to auto-detect (undefined) rather than forcing a language; the util
+    // omits the param so Whisper detects. 'auto' from the client is also honored.
+    const language = req.body.language && req.body.language !== 'auto' ? req.body.language : undefined;
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
 

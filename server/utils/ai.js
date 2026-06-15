@@ -29,9 +29,11 @@ export function getProvider() {
   return null;
 }
 
+// Models are overridable via env so a future decommission needs no code change.
+// llama-3.1-70b-versatile was decommissioned by Groq → llama-3.3-70b-versatile.
 const MODELS = {
-  groq: 'llama-3.1-70b-versatile',
-  openai: 'gpt-4o-mini'
+  groq: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  openai: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
 };
 
 export async function chatComplete({ messages, temperature = 0.3, maxTokens = 4000 }) {

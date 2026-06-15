@@ -107,7 +107,8 @@ router.post('/', async (req, res, next) => {
     downloadedPath = join(tmpDir, match[0]);
 
     const useTask = task === 'translate' ? 'translate' : 'transcribe';
-    const lang = language || 'el';
+    // undefined/'auto' → Whisper auto-detects (see transcription util).
+    const lang = language && language !== 'auto' ? language : undefined;
     const wantsWords = String(word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
 

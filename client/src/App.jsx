@@ -46,8 +46,35 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { weekday: 'short' });
 }
 
+// Resolve a language by ISO code (e.g. 'el') OR by the full English name that
+// Whisper returns in verbose_json (e.g. 'greek'). Falls back to a synthesized
+// entry (capitalized name) so an uncommon language still displays sensibly
+// instead of collapsing to "Auto-detect".
 function langInfo(code) {
-  return LANGS.find(l => l.code === code) || LANGS[0];
+  if (!code) return LANGS[0];
+  const lc = String(code).toLowerCase();
+  const byCode = LANGS.find(l => l.code === lc);
+  if (byCode) return byCode;
+  const byName = LANGS.find(l => l.name.toLowerCase() === lc);
+  if (byName) return byName;
+  if (lc === 'auto') return LANGS[0];
+  // Unknown but named language → show it with a neutral flag/colour.
+  const flag = lc.slice(0, 2).toUpperCase();
+  return { code: lc, name: lc.charAt(0).toUpperCase() + lc.slice(1), flag, color: '#7c7a72' };
+}
+
+// Summary action items may come back as plain strings or {task,owner,due}
+// objects — normalize to a readable line either way (rendering a raw object
+// as a React child would throw).
+function fmtActionItem(item) {
+  if (typeof item === 'string') return item;
+  if (item && typeof item === 'object') {
+    const parts = [item.task || item.text || ''];
+    if (item.owner) parts.push(`— ${item.owner}`);
+    if (item.due) parts.push(`(${item.due})`);
+    return parts.filter(Boolean).join(' ');
+  }
+  return String(item ?? '');
 }
 
 // Wrap case-insensitive matches of `query` in <mark> for in-transcript search.
@@ -531,24 +558,26 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             {Array.isArray(summary.tldr) && summary.tldr.length > 0 && (
               <div className="summary-block">
                 <h5>TL;DR</h5>
-                <ul>{summary.tldr.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                <ul>{summary.tldr.map((t, i) => <li key={i}>{fmtActionItem(t)}</li>)}</ul>
               </div>
             )}
             {Array.isArray(summary.keyPoints) && summary.keyPoints.length > 0 && (
               <div className="summary-block">
                 <h5>Key points</h5>
-                <ul>{summary.keyPoints.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                <ul>{summary.keyPoints.map((t, i) => <li key={i}>{fmtActionItem(t)}</li>)}</ul>
               </div>
             )}
             {Array.isArray(summary.actionItems) && summary.actionItems.length > 0 && (
               <div className="summary-block">
                 <h5>Action items</h5>
-                <ul>{summary.actionItems.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                <ul>{summary.actionItems.map((t, i) => (
+                  <li key={i}>{fmtActionItem(t)}</li>
+                ))}</ul>
               </div>
             )}
             {Array.isArray(summary.topics) && summary.topics.length > 0 && (
               <div className="summary-topics">
-                {summary.topics.map((t, i) => <span key={i} className="chip">{t}</span>)}
+                {summary.topics.map((t, i) => <span key={i} className="chip">{fmtActionItem(t)}</span>)}
               </div>
             )}
           </div>

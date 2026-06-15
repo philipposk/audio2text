@@ -79,7 +79,11 @@ export async function transcribeAudio(filePath, options = {}) {
 
       // The translate endpoint always outputs English and does NOT accept `language`.
       if (task === 'transcribe') {
-        params.language = options.language || 'el';
+        // Omit `language` for auto-detect ('auto' or empty). Whisper rejects the
+        // literal string 'auto', and forcing a default would mis-transcribe audio
+        // in other languages. When omitted, Whisper detects the language itself.
+        const lang = options.language;
+        if (lang && lang !== 'auto') params.language = lang;
         if (response_format === 'verbose_json') {
           params.timestamp_granularities = granularities;
         }

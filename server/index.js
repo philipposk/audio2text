@@ -2,7 +2,7 @@ import './env.js'; // must be first — loads .env before any module reads proce
 import express from 'express';
 import cors from 'cors';
 import expressWs from 'express-ws';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 
 import transcriptionRoutes from './routes/transcription.js';
@@ -154,8 +154,11 @@ export function createApp({ withWebsocket = process.env.NODE_ENV !== 'test' } = 
   return app;
 }
 
-// Only listen when run directly (skip during tests).
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// Only listen when run directly (skip during tests). Use pathToFileURL so paths
+// containing spaces or other URL-special characters compare correctly — a raw
+// `file://${argv[1]}` would mismatch import.meta.url (which percent-encodes them)
+// and the server would silently never call listen().
+const isMain = import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const PORT = process.env.PORT || 3000;
   const app = createApp();
