@@ -3,7 +3,7 @@ import { I, LANGS } from './icons';
 import {
   transcribeFile, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
-  listGlossaries, createGlossary, deleteGlossary,
+  listGlossaries, createGlossary, deleteGlossary, summarize,
   openLiveSocket, setApiKey, getApiKey, downloadBlob
 } from './api';
 import './styles/translator.css';
@@ -48,6 +48,18 @@ function fmtDate(iso) {
 
 function langInfo(code) {
   return LANGS.find(l => l.code === code) || LANGS[0];
+}
+
+// Wrap case-insensitive matches of `query` in <mark> for in-transcript search.
+function highlight(text, query) {
+  if (!query || !text) return text;
+  const safe = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = String(text).split(new RegExp(`(${safe})`, 'ig'));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i}>{part}</mark>
+      : part
+  );
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -399,10 +411,13 @@ function RecentSection({ jobs, onSelect, onDeleteJob }) {
 }
 
 // ─── Result view ──────────────────────────────────────────────────────────────
-function ResultView({ job, translatedJob, source, target, onTranslate, translating, refineHistory, onRefine }) {
+function ResultView({ job, translatedJob, source, target, onTranslate, translating, refineHistory, onRefine, onError }) {
   const [refineInput, setRefineInput] = useState('');
   const [copying, setCopying] = useState(null);
   const [exporting, setExporting] = useState(null);
+  const [search, setSearch] = useState('');
+  const [summary, setSummary] = useState(null);
+  const [summarizing, setSummarizing] = useState(false);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
@@ -444,6 +459,23 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     await onRefine(msg);
   };
 
+  const handleSummarize = async () => {
+    setSummarizing(true);
+    try {
+      const res = await summarize({ transcription: fullText, jobId: job.id, kind: 'generic', length: 'normal' });
+      setSummary(res.summary || res);
+    } catch (err) {
+      onError?.(err.message || 'Summary failed');
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  // Filter segments by search term (matches highlighted via highlight()).
+  const matches = (txt) => !search || (txt || '').toLowerCase().includes(search.toLowerCase());
+  const visibleSegs = search ? segments.filter(s => matches(s.text)) : segments;
+  const visibleTransSegs = search ? translatedSegs.filter(s => matches(s.text)) : translatedSegs;
+
   const wordCount = fullText.split(/\s+/).filter(Boolean).length;
   const speakerCount = new Set(segments.map(s => s.speaker).filter(Boolean)).size;
 
@@ -462,6 +494,9 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             <button className="btn sm" onClick={() => handleCopy(fullText, 'orig')}>
               {I.copy} {copying === 'orig' ? 'Copied!' : 'Copy'}
             </button>
+            <button className="btn sm" onClick={handleSummarize} disabled={summarizing}>
+              {I.spark} {summarizing ? 'Summarizing…' : 'Summary'}
+            </button>
             {!translatedJob && (
               <button className="btn sm accent" onClick={onTranslate} disabled={translating}>
                 {translating ? 'Translating…' : `Translate → ${tgt.name}`}
@@ -469,6 +504,55 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             )}
           </div>
         </div>
+
+        {/* Search bar */}
+        <div className="transcript-search">
+          <span className="ico">{I.search}</span>
+          <input
+            placeholder="Search in transcript…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <span className="search-count">
+              {visibleSegs.length + visibleTransSegs.length} match{visibleSegs.length + visibleTransSegs.length === 1 ? '' : 'es'}
+            </span>
+          )}
+          {search && <span className="search-clear" onClick={() => setSearch('')}>✕</span>}
+        </div>
+
+        {/* Summary panel */}
+        {summary && (
+          <div className="summary-panel">
+            <div className="summary-head">
+              <span className="summary-title">{I.spark} Summary</span>
+              <span className="summary-close" onClick={() => setSummary(null)}>✕</span>
+            </div>
+            {Array.isArray(summary.tldr) && summary.tldr.length > 0 && (
+              <div className="summary-block">
+                <h5>TL;DR</h5>
+                <ul>{summary.tldr.map((t, i) => <li key={i}>{t}</li>)}</ul>
+              </div>
+            )}
+            {Array.isArray(summary.keyPoints) && summary.keyPoints.length > 0 && (
+              <div className="summary-block">
+                <h5>Key points</h5>
+                <ul>{summary.keyPoints.map((t, i) => <li key={i}>{t}</li>)}</ul>
+              </div>
+            )}
+            {Array.isArray(summary.actionItems) && summary.actionItems.length > 0 && (
+              <div className="summary-block">
+                <h5>Action items</h5>
+                <ul>{summary.actionItems.map((t, i) => <li key={i}>{t}</li>)}</ul>
+              </div>
+            )}
+            {Array.isArray(summary.topics) && summary.topics.length > 0 && (
+              <div className="summary-topics">
+                {summary.topics.map((t, i) => <span key={i} className="chip">{t}</span>)}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={`pane-grid ${translatedJob ? '' : 'single'}`}>
           {/* Original pane */}
@@ -483,13 +567,16 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
               </div>
             </div>
             <div className="pane-body">
-              {segments.length > 0 ? segments.map((seg, i) => (
+              {segments.length > 0 ? visibleSegs.map((seg, i) => (
                 <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
                   <span className="ts">{fmtDuration(seg.start)}</span>
-                  {seg.text}
+                  {highlight(seg.text, search)}
                 </p>
               )) : (
-                <p className="speaker">{fullText}</p>
+                <p className="speaker">{highlight(fullText, search)}</p>
+              )}
+              {segments.length > 0 && visibleSegs.length === 0 && (
+                <p className="speaker" style={{ color: 'var(--muted)' }}>No matches.</p>
               )}
             </div>
           </div>
@@ -508,13 +595,16 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
                 </div>
               </div>
               <div className="pane-body">
-                {translatedSegs.length > 0 ? translatedSegs.map((seg, i) => (
+                {translatedSegs.length > 0 ? visibleTransSegs.map((seg, i) => (
                   <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
                     <span className="ts">{fmtDuration(seg.start)}</span>
-                    {seg.text}
+                    {highlight(seg.text, search)}
                   </p>
                 )) : (
-                  <p className="speaker">{translatedText}</p>
+                  <p className="speaker">{highlight(translatedText, search)}</p>
+                )}
+                {translatedSegs.length > 0 && visibleTransSegs.length === 0 && (
+                  <p className="speaker" style={{ color: 'var(--muted)' }}>No matches.</p>
                 )}
               </div>
             </div>
@@ -1300,6 +1390,7 @@ export default function App() {
               translating={translating}
               refineHistory={refineHistory}
               onRefine={handleRefine}
+              onError={setError}
             />
           </>
         )}

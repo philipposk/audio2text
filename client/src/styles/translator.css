@@ -895,6 +895,48 @@
   /* ── mic btn active ── */
   .mic-btn.active { background: var(--accent); color: #fff; }
 
+  /* ── transcript search ── */
+  .transcript-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; margin: 0 0 14px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .transcript-search input {
+    flex: 1; background: transparent; border: none; outline: none;
+    font-size: 13.5px; color: var(--ink);
+  }
+  .transcript-search .ico { color: var(--muted); display: flex; }
+  .search-count { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+  .search-clear { cursor: pointer; color: var(--muted); font-size: 14px; padding: 0 4px; }
+  .search-clear:hover { color: var(--ink); }
+  mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+
+  /* ── summary panel ── */
+  .summary-panel {
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: 12px; padding: 16px 18px; margin: 0 0 16px;
+  }
+  .summary-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .summary-title {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 600; font-size: 14px; color: var(--ink);
+  }
+  .summary-title svg { color: var(--accent); }
+  .summary-close { cursor: pointer; color: var(--muted); font-size: 15px; }
+  .summary-close:hover { color: var(--ink); }
+  .summary-block { margin-bottom: 12px; }
+  .summary-block h5 {
+    margin: 0 0 5px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--muted); font-weight: 600;
+  }
+  .summary-block ul { margin: 0; padding-left: 18px; }
+  .summary-block li { font-size: 13.5px; color: var(--ink-2); margin-bottom: 3px; line-height: 1.5; }
+  .summary-topics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
   /* responsive */
   @media (max-width: 1024px) {
     .app { grid-template-columns: 64px 1fr; }
