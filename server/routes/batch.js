@@ -19,8 +19,20 @@ const __dirname = dirname(__filename);
 
 const router = express.Router();
 
+// Preserve the original extension in the temp filename — OpenAI Whisper infers
+// the audio format from it, and rejects extensionless files ("Unrecognized file
+// format"). multer's bare `dest` strips the extension, so use diskStorage.
+const storage = multer.diskStorage({
+  destination: join(__dirname, '../../uploads'),
+  filename: (req, file, cb) => {
+    const suffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const safe = file.originalname.replace(/[/\\]/g, '_').replace(/\.{2,}/g, '_').slice(0, 180);
+    cb(null, `${suffix}-${safe}`);
+  }
+});
+
 const upload = multer({
-  dest: join(__dirname, '../../uploads'),
+  storage,
   limits: { fileSize: 100 * 1024 * 1024, files: 25 }
 });
 
@@ -106,7 +118,8 @@ router.post('/', upload.array('audio', 25), async (req, res, next) => {
       return res.status(400).json({ error: 'Upload one or more files under "audio" field.' });
     }
     const task = req.body.task === 'translate' ? 'translate' : 'transcribe';
-    const language = req.body.language || 'el';
+    // Auto-detect by default (undefined) — the util omits the param; 'auto' too.
+    const language = req.body.language && req.body.language !== 'auto' ? req.body.language : undefined;
     const prompt = req.body.prompt || '';
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];

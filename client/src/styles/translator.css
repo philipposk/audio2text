@@ -895,6 +895,33 @@
   /* ── mic btn active ── */
   .mic-btn.active { background: var(--accent); color: #fff; }
 
+  /* ── batch list ── */
+  .batch-list { display: flex; flex-direction: column; gap: 8px; }
+  .batch-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 12px;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .batch-row.ok:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .batch-row .batch-status { font-size: 16px; width: 20px; text-align: center; }
+  .batch-row.ok .batch-status { color: var(--accent); }
+  .batch-row.fail .batch-status { color: #c7522a; }
+  .batch-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .batch-file { font-weight: 500; font-size: 14px; color: var(--ink); }
+  .batch-preview {
+    font-size: 12.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .batch-row.fail .batch-preview { color: #c7522a; }
+  .batch-open { color: var(--muted); display: flex; }
+  .batch-spinner {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--line-2); border-top-color: var(--accent);
+    animation: batch-spin 0.8s linear infinite;
+  }
+  @keyframes batch-spin { to { transform: rotate(360deg); } }
+
   /* ── glossary picker (translate) ── */
   .glossary-select {
     font: inherit; font-size: 13px; color: var(--ink);

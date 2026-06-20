@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { I, LANGS } from './icons';
 import { hexToSoft, fmtDuration, fmtDate, langInfo, fmtActionItem } from './lib/format';
 import {
-  transcribeFile, ingestUrl, translateJobSegments,
+  transcribeFile, transcribeBatch, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
   listGlossaries, createGlossary, deleteGlossary, summarize,
   updateSegments, jobAudioUrl,
@@ -92,6 +92,7 @@ function Topbar({ appState, title, onReset }) {
         <b>Transcribe</b>
         {appState === 'result' && title && <><span>/</span><span>{title}</span></>}
         {appState === 'transcribing' && <><span>/</span><span>Processing…</span></>}
+        {appState === 'batch' && <><span>/</span><span>Batch</span></>}
       </div>
       <div className="topbar-actions">
         {appState !== 'empty' && (
@@ -196,15 +197,20 @@ function Modes({ mode, onChange }) {
 }
 
 // ─── FileDrop ─────────────────────────────────────────────────────────────────
-function FileDrop({ onFile }) {
+function FileDrop({ onFile, onBatch }) {
   const inputRef = useRef();
   const [dragging, setDragging] = useState(false);
 
-  const handle = (file) => {
-    if (!file) return;
-    const ok = file.type.startsWith('audio/') || file.type.startsWith('video/') ||
-      /\.(mp3|wav|m4a|flac|ogg|mp4|webm|aac|mov|mkv)$/i.test(file.name);
-    if (ok) onFile(file);
+  const accept = (file) =>
+    file.type.startsWith('audio/') || file.type.startsWith('video/') ||
+    /\.(mp3|wav|m4a|flac|ogg|mp4|webm|aac|mov|mkv)$/i.test(file.name);
+
+  // 1 file → single transcribe; 2+ → batch.
+  const handleFiles = (fileList) => {
+    const files = Array.from(fileList || []).filter(accept);
+    if (files.length === 0) return;
+    if (files.length === 1) onFile(files[0]);
+    else onBatch(files);
   };
 
   return (
@@ -213,14 +219,15 @@ function FileDrop({ onFile }) {
       onClick={() => inputRef.current?.click()}
       onDragOver={e => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
-      onDrop={e => { e.preventDefault(); setDragging(false); handle(e.dataTransfer.files[0]); }}
+      onDrop={e => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
     >
       <input
         ref={inputRef}
         type="file"
+        multiple
         accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.mp4,.webm,.aac"
         style={{ display: 'none' }}
-        onChange={e => handle(e.target.files[0])}
+        onChange={e => handleFiles(e.target.files)}
       />
       <div className="dropzone-ico">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -229,7 +236,7 @@ function FileDrop({ onFile }) {
       </div>
       <div>
         <h3>Drop a recording, paste, or browse</h3>
-        <p>Up to 2 GB · audio or video · we'll detect the language automatically</p>
+        <p>Up to 2 GB · one file or many · we'll detect the language automatically</p>
       </div>
       <div className="dropzone-formats">
         {['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'webm', 'aac'].map(f => (
@@ -380,6 +387,43 @@ function RecentSection({ jobs, onSelect, onDeleteJob }) {
           <RecentCard key={job.id} job={job} onSelect={onSelect} onDelete={onDeleteJob} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Batch view ───────────────────────────────────────────────────────────────
+function BatchView({ batch, onOpen }) {
+  if (batch.processing) {
+    return (
+      <div className="batch-list">
+        {Array.from({ length: batch.count }).map((_, i) => (
+          <div key={i} className="batch-row processing">
+            <span className="batch-spinner" />
+            <span className="batch-file">File {i + 1} of {batch.count}…</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="batch-list">
+      {batch.results.map((r, i) => (
+        <div
+          key={i}
+          className={`batch-row ${r.jobId ? 'ok' : 'fail'}`}
+          onClick={r.jobId ? () => onOpen({ id: r.jobId }) : undefined}
+          style={{ cursor: r.jobId ? 'pointer' : 'default' }}
+        >
+          <span className="batch-status">{r.jobId ? '✓' : '✕'}</span>
+          <div className="batch-meta">
+            <span className="batch-file">{r.file}</span>
+            <span className="batch-preview">
+              {r.jobId ? (r.preview || '').slice(0, 120) + '…' : r.error}
+            </span>
+          </div>
+          {r.jobId && <span className="batch-open">{I.arrow}</span>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1198,7 +1242,8 @@ export default function App() {
   const [activeView, setActiveView] = useState('transcribe');
 
   // Transcribe flow
-  const [appState, setAppState] = useState('empty'); // empty | transcribing | result
+  const [appState, setAppState] = useState('empty'); // empty | transcribing | result | batch
+  const [batch, setBatch] = useState(null); // { processing, count, results }
   const [mode, setMode] = useState('file');
   const [source, setSource] = useState(() => localStorage.getItem('t_source') || 'auto');
   const [target, setTarget] = useState(() => localStorage.getItem('t_target') || 'en');
@@ -1295,6 +1340,7 @@ export default function App() {
     setRefineHistory([]);
     setPendingFile(null);
     setDetectedLang(null);
+    setBatch(null);
   };
 
   const startTranscribe = async (file, url) => {
@@ -1338,6 +1384,24 @@ export default function App() {
 
   const handleFile = (file) => startTranscribe(file, null);
   const handleUrl = (url) => startTranscribe(null, url);
+
+  const handleBatch = async (files) => {
+    setAppState('batch');
+    setBatch({ processing: true, count: files.length, results: [] });
+    setError(null);
+    try {
+      const res = await transcribeBatch(files, {
+        task: 'transcribe',
+        language: source === 'auto' ? undefined : source,
+      });
+      setBatch({ processing: false, count: res.total, ok: res.ok, failed: res.failed, results: res.results || [] });
+      loadJobs();
+    } catch (err) {
+      setError(err.message || 'Batch transcription failed');
+      setAppState('empty');
+      setBatch(null);
+    }
+  };
 
   const handleTranslate = async (glossaryId) => {
     if (!currentJob) return;
@@ -1455,10 +1519,28 @@ export default function App() {
               detectedLang={detectedLang}
             />
             <Modes mode={mode} onChange={setMode} />
-            {mode === 'file' && <FileDrop onFile={handleFile} />}
+            {mode === 'file' && <FileDrop onFile={handleFile} onBatch={handleBatch} />}
             {mode === 'url' && <UrlInput onUrl={handleUrl} />}
             {mode === 'mic' && <MicPanel onStart={() => setActiveView('live')} />}
             <RecentSection jobs={jobs} onSelect={handleSelectJob} onDeleteJob={handleDeleteJob} />
+          </>
+        )}
+
+        {appState === 'batch' && batch && (
+          <>
+            <div className="page-head">
+              <div>
+                <h1 className="page-title">
+                  {batch.processing ? <>Transcribing {batch.count} files<em>…</em></> : 'Batch complete'}
+                </h1>
+                <p className="page-sub">
+                  {batch.processing
+                    ? 'Processing in parallel · this runs in the background'
+                    : `${batch.ok} succeeded${batch.failed ? `, ${batch.failed} failed` : ''} of ${batch.count}`}
+                </p>
+              </div>
+            </div>
+            <BatchView batch={batch} onOpen={handleSelectJob} />
           </>
         )}
 

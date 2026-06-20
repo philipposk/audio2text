@@ -55,6 +55,16 @@ export const ingestUrl = (url, { task = 'transcribe', language = 'auto', wordTim
     body: JSON.stringify({ url, task, language: language === 'auto' ? undefined : language, word_timestamps: wordTimestamps })
   });
 
+// Batch transcription — up to 25 files in one request. Returns
+// { total, ok, failed, results:[{file, jobId, preview, error?}] }.
+export const transcribeBatch = (files, { task = 'transcribe', language = 'auto' } = {}) => {
+  const fd = new FormData();
+  for (const f of files) fd.append('audio', f);
+  fd.append('task', task);
+  if (language && language !== 'auto') fd.append('language', language);
+  return formFetch('/transcribe/batch', fd);
+};
+
 export const translateText = ({ text, sourceLang, targetLang, glossaryId, glossary }) =>
   jsonFetch('/translate', {
     method: 'POST',
