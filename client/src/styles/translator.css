@@ -905,6 +905,17 @@
   .ts.seekable { cursor: pointer; transition: color 0.12s, background 0.12s; }
   .ts.seekable:hover { color: var(--accent); background: var(--accent-soft); }
 
+  /* ── inline segment editing ── */
+  .seg-text { border-radius: 4px; transition: background 0.12s; }
+  .seg-text:hover { background: var(--accent-soft); cursor: text; }
+  .seg-edit {
+    display: inline-block; width: calc(100% - 60px); vertical-align: top;
+    min-height: 2.4em; padding: 6px 9px; margin-top: -2px;
+    font: inherit; line-height: 1.55; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--accent); border-radius: 8px;
+    outline: none; resize: vertical;
+  }
+
   /* ── transcript search ── */
   .transcript-search {
     display: flex; align-items: center; gap: 8px;

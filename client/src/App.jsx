@@ -392,12 +392,19 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [editedSegs, setEditedSegs] = useState(null);
+  const [editIdx, setEditIdx] = useState(-1);
+  const [editText, setEditText] = useState('');
   const audioRef = useRef(null);
+
+  // Drop local edits when switching to a different job.
+  useEffect(() => { setEditedSegs(null); setEditIdx(-1); }, [job.id]);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
 
-  const segments = job.segments || [];
+  // editedSegs (unsaved-but-applied local edits) take precedence over job data.
+  const segments = editedSegs || job.segments || [];
   const translatedSegs = translatedJob?.segments || [];
 
   // Source audio is stored on self-hosted servers (not Vercel) for jobs created
@@ -410,7 +417,24 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     a.play().catch(() => {});
   };
 
-  const fullText = job.transcription || segments.map(s => s.text).join(' ');
+  const startEdit = (i, current) => { setEditIdx(i); setEditText(current); };
+  const cancelEdit = () => { setEditIdx(-1); setEditText(''); };
+  const saveEdit = async (i) => {
+    const next = segments.map((s, idx) => (idx === i ? { ...s, text: editText } : s));
+    setEditedSegs(next);
+    setEditIdx(-1);
+    try {
+      await updateSegments(job.id, next);
+    } catch (err) {
+      onError?.(err.message || 'Save failed');
+    }
+  };
+
+  // After inline edits, rebuild full text from segments so copy/export/summary
+  // reflect the corrections; otherwise prefer the stored transcription.
+  const fullText = editedSegs
+    ? editedSegs.map(s => s.text).join(' ')
+    : (job.transcription || segments.map(s => s.text).join(' '));
   const translatedText = translatedJob?.transcription || translatedSegs.map(s => s.text).join(' ');
 
   const handleCopy = async (text, key) => {
@@ -574,7 +598,27 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
                   >
                     {fmtDuration(seg.start)}
                   </span>
-                  {highlight(seg.text, search)}
+                  {editIdx === i ? (
+                    <textarea
+                      className="seg-edit"
+                      autoFocus
+                      value={editText}
+                      onChange={e => setEditText(e.target.value)}
+                      onBlur={() => saveEdit(i)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(i); }
+                        if (e.key === 'Escape') cancelEdit();
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className={search ? '' : 'seg-text'}
+                      title={search ? undefined : 'Double-click to edit'}
+                      onDoubleClick={search ? undefined : () => startEdit(i, seg.text)}
+                    >
+                      {highlight(seg.text, search)}
+                    </span>
+                  )}
                 </p>
               )) : (
                 <p className="speaker">{highlight(fullText, search)}</p>
