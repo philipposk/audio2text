@@ -912,6 +912,14 @@
   .ts.seekable { cursor: pointer; transition: color 0.12s, background 0.12s; }
   .ts.seekable:hover { color: var(--accent); background: var(--accent-soft); }
 
+  /* ── active segment during playback ── */
+  .speaker.seg-active {
+    background: var(--accent-soft);
+    border-radius: 8px;
+    box-shadow: -8px 0 0 var(--accent-soft), 8px 0 0 var(--accent-soft);
+  }
+  .speaker.seg-active .ts { color: var(--accent); font-weight: 600; }
+
   /* ── inline segment editing ── */
   .seg-text { border-radius: 4px; transition: background 0.12s; }
   .seg-text:hover { background: var(--accent-soft); cursor: text; }

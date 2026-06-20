@@ -396,10 +396,11 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [editedSegs, setEditedSegs] = useState(null);
   const [editIdx, setEditIdx] = useState(-1);
   const [editText, setEditText] = useState('');
+  const [activeSeg, setActiveSeg] = useState(-1);
   const audioRef = useRef(null);
 
-  // Drop local edits when switching to a different job.
-  useEffect(() => { setEditedSegs(null); setEditIdx(-1); }, [job.id]);
+  // Drop local edits + playback highlight when switching to a different job.
+  useEffect(() => { setEditedSegs(null); setEditIdx(-1); setActiveSeg(-1); }, [job.id]);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
@@ -417,6 +418,27 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     a.currentTime = Number(sec) || 0;
     a.play().catch(() => {});
   };
+
+  // As the audio plays, highlight the segment covering the current time.
+  const onTimeUpdate = () => {
+    const a = audioRef.current;
+    if (!a || !segments.length) return;
+    const t = a.currentTime;
+    let idx = -1;
+    for (let i = 0; i < segments.length; i++) {
+      const start = segments[i].start || 0;
+      const end = segments[i].end ?? (segments[i + 1]?.start ?? Infinity);
+      if (t >= start && t < end) { idx = i; break; }
+    }
+    if (idx !== activeSeg) setActiveSeg(idx);
+  };
+
+  // Keep the active line in view while it plays.
+  useEffect(() => {
+    if (activeSeg < 0) return;
+    document.querySelector(`[data-seg="${activeSeg}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeSeg]);
 
   const startEdit = (i, current) => { setEditIdx(i); setEditText(current); };
   const cancelEdit = () => { setEditIdx(-1); setEditText(''); };
@@ -536,6 +558,7 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             controls
             preload="metadata"
             src={jobAudioUrl(job.id)}
+            onTimeUpdate={onTimeUpdate}
           />
         )}
 
@@ -604,7 +627,12 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </div>
             <div className="pane-body">
               {segments.length > 0 ? visibleSegs.map((seg, i) => (
-                <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
+                <p
+                  key={i}
+                  className={`speaker ${!search && i === activeSeg ? 'seg-active' : ''}`}
+                  data-speaker={seg.speaker || 'Speaker'}
+                  data-seg={search ? undefined : i}
+                >
                   <span
                     className={`ts ${hasAudio ? 'seekable' : ''}`}
                     onClick={hasAudio ? () => seekTo(seg.start) : undefined}
