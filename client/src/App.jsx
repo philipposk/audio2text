@@ -536,6 +536,17 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     await onRefine(msg);
   };
 
+  // Render the structured summary as shareable plain text.
+  const summaryToText = (s) => {
+    if (!s) return '';
+    const lines = [];
+    if (s.tldr?.length) { lines.push('TL;DR'); s.tldr.forEach(t => lines.push(`• ${fmtActionItem(t)}`)); lines.push(''); }
+    if (s.keyPoints?.length) { lines.push('KEY POINTS'); s.keyPoints.forEach(t => lines.push(`• ${fmtActionItem(t)}`)); lines.push(''); }
+    if (s.actionItems?.length) { lines.push('ACTION ITEMS'); s.actionItems.forEach(t => lines.push(`• ${fmtActionItem(t)}`)); lines.push(''); }
+    if (s.topics?.length) lines.push('TOPICS: ' + s.topics.map(fmtActionItem).join(', '));
+    return lines.join('\n').trim();
+  };
+
   const handleSummarize = async (kind = summaryKind) => {
     setSummarizing(true);
     try {
@@ -641,6 +652,14 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
                   <option value="lecture">Lecture</option>
                   <option value="podcast">Podcast</option>
                 </select>
+                <button className="btn ghost sm" title="Copy summary"
+                  onClick={() => handleCopy(summaryToText(summary), 'sum')}>
+                  {copying === 'sum' ? 'Copied!' : I.copy}
+                </button>
+                <button className="btn ghost sm" title="Download summary"
+                  onClick={() => downloadBlob(new Blob([summaryToText(summary)], { type: 'text/plain' }), `${job.filename || job.id}-summary.txt`)}>
+                  {I.download}
+                </button>
                 <span className="summary-close" onClick={() => setSummary(null)}>✕</span>
               </span>
             </div>
