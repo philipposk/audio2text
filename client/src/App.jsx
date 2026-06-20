@@ -385,13 +385,14 @@ function RecentSection({ jobs, onSelect, onDeleteJob }) {
 }
 
 // ─── Result view ──────────────────────────────────────────────────────────────
-function ResultView({ job, translatedJob, source, target, onTranslate, translating, refineHistory, onRefine, onError }) {
+function ResultView({ job, translatedJob, source, target, onTranslate, translating, refineHistory, onRefine, onError, glossaries = [] }) {
   const [refineInput, setRefineInput] = useState('');
   const [copying, setCopying] = useState(null);
   const [exporting, setExporting] = useState(null);
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [glossaryId, setGlossaryId] = useState('');
   const [editedSegs, setEditedSegs] = useState(null);
   const [editIdx, setEditIdx] = useState(-1);
   const [editText, setEditText] = useState('');
@@ -506,8 +507,21 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             <button className="btn sm" onClick={handleSummarize} disabled={summarizing}>
               {I.spark} {summarizing ? 'Summarizing…' : 'Summary'}
             </button>
+            {!translatedJob && glossaries.length > 0 && (
+              <select
+                className="glossary-select"
+                value={glossaryId}
+                onChange={e => setGlossaryId(e.target.value)}
+                title="Apply a glossary for consistent terms"
+              >
+                <option value="">No glossary</option>
+                {glossaries.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            )}
             {!translatedJob && (
-              <button className="btn sm accent" onClick={onTranslate} disabled={translating}>
+              <button className="btn sm accent" onClick={() => onTranslate(glossaryId)} disabled={translating}>
                 {translating ? 'Translating…' : `Translate → ${tgt.name}`}
               </button>
             )}
@@ -1158,8 +1172,8 @@ export default function App() {
   // Transcribe flow
   const [appState, setAppState] = useState('empty'); // empty | transcribing | result
   const [mode, setMode] = useState('file');
-  const [source, setSource] = useState('auto');
-  const [target, setTarget] = useState('en');
+  const [source, setSource] = useState(() => localStorage.getItem('t_source') || 'auto');
+  const [target, setTarget] = useState(() => localStorage.getItem('t_target') || 'en');
   const [detectedLang, setDetectedLang] = useState(null);
 
   // Lang picker
@@ -1179,8 +1193,16 @@ export default function App() {
   const [refineHistory, setRefineHistory] = useState([]);
   const [refining, setRefining] = useState(false);
 
+  // Glossaries (for applying consistent terms during translation)
+  const [glossaries, setGlossaries] = useState([]);
+
   // Error
   const [error, setError] = useState(null);
+
+  // Load glossaries once for the translation picker.
+  useEffect(() => {
+    listGlossaries().then(d => setGlossaries(d.glossaries || d || [])).catch(() => {});
+  }, []);
 
   // Apply theme + accent
   useEffect(() => {
@@ -1190,6 +1212,22 @@ export default function App() {
     localStorage.setItem('t_theme', theme);
     localStorage.setItem('t_accent', accent);
   }, [theme, accent]);
+
+  // Remember the chosen languages across sessions.
+  useEffect(() => { localStorage.setItem('t_source', source); }, [source]);
+  useEffect(() => { localStorage.setItem('t_target', target); }, [target]);
+
+  // ⌘K / Ctrl-K focuses the transcript search when viewing a result.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        const input = document.querySelector('.transcript-search input');
+        if (input) { e.preventDefault(); input.focus(); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Load jobs on history view
   useEffect(() => {
@@ -1273,13 +1311,13 @@ export default function App() {
   const handleFile = (file) => startTranscribe(file, null);
   const handleUrl = (url) => startTranscribe(null, url);
 
-  const handleTranslate = async () => {
+  const handleTranslate = async (glossaryId) => {
     if (!currentJob) return;
     setTranslating(true);
     setError(null);
     try {
       // Backend returns { jobId } metadata only — fetch full job to get segments
-      const meta = await translateJobSegments(currentJob.id, target, source === 'auto' ? currentJob.language : source);
+      const meta = await translateJobSegments(currentJob.id, target, source === 'auto' ? currentJob.language : source, glossaryId || undefined);
       const jobId = meta.jobId || meta.id;
       if (!jobId) throw new Error('No jobId in translation response');
       const full = await getJob(jobId);
@@ -1439,6 +1477,7 @@ export default function App() {
               refineHistory={refineHistory}
               onRefine={handleRefine}
               onError={setError}
+              glossaries={glossaries}
             />
           </>
         )}

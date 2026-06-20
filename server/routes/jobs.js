@@ -1,6 +1,6 @@
 // History + bulk-translation endpoints for transcription/translation jobs.
 import express from 'express';
-import { listJobs, getJob, deleteJob, createJob, updateJob } from '../db/index.js';
+import { listJobs, getJob, deleteJob, createJob, updateJob, getGlossary } from '../db/index.js';
 import { chatComplete } from '../utils/ai.js';
 import { streamAudio, audioFilePath, removeAudio } from '../utils/audioStore.js';
 
@@ -25,11 +25,16 @@ function batchSegments(segments, maxItems = 80, maxChars = 6000) {
   return batches;
 }
 
-async function translateBatch(items, sourceLang, targetLang) {
+async function translateBatch(items, sourceLang, targetLang, glossary) {
   const numbered = items.map((s, i) => `${i + 1}. ${s}`).join('\n');
+  // Inject glossary term mappings so technical terms/names translate consistently.
+  const glossaryLines = glossary && Object.keys(glossary).length
+    ? '\nUse this glossary for these terms (source = exact target):\n' +
+      Object.entries(glossary).map(([k, v]) => `  ${k} = ${v}`).join('\n')
+    : '';
   const systemPrompt = `You translate subtitle segments from ${sourceLang || 'auto-detected source'} into ${targetLang}.
 Return STRICT JSON: {"translations": ["...", "..."]} with exactly ${items.length} entries, preserving order.
-No markdown, no commentary.`;
+No markdown, no commentary.${glossaryLines}`;
   const { text } = await chatComplete({
     messages: [
       { role: 'system', content: systemPrompt },
@@ -116,7 +121,7 @@ router.patch('/:id/segments', async (req, res, next) => {
  */
 router.post('/:id/translate', async (req, res, next) => {
   try {
-    const { targetLang, sourceLang } = req.body || {};
+    const { targetLang, sourceLang, glossaryId } = req.body || {};
     if (!targetLang) return res.status(400).json({ error: 'targetLang required' });
 
     const source = await getJob(req.params.id);
@@ -125,11 +130,18 @@ router.post('/:id/translate', async (req, res, next) => {
       return res.status(400).json({ error: 'Source job has no segments to translate' });
     }
 
+    // Optional glossary for consistent terminology across the translation.
+    let glossary = null;
+    if (glossaryId) {
+      const g = await getGlossary(glossaryId);
+      if (g) glossary = g.entries || null;
+    }
+
     const batches = batchSegments(source.segments);
     const translatedTexts = [];
     for (const batch of batches) {
       const items = batch.map((s) => s.text || '');
-      const out = await translateBatch(items, sourceLang || source.language, targetLang);
+      const out = await translateBatch(items, sourceLang || source.language, targetLang, glossary);
       translatedTexts.push(...out);
     }
 
@@ -153,7 +165,8 @@ router.post('/:id/translate', async (req, res, next) => {
       meta: {
         sourceJobId: source.id,
         sourceLang: sourceLang || source.language || null,
-        targetLang
+        targetLang,
+        glossaryId: glossaryId || null
       }
     });
 

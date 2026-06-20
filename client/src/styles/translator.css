@@ -895,6 +895,13 @@
   /* ── mic btn active ── */
   .mic-btn.active { background: var(--accent); color: #fff; }
 
+  /* ── glossary picker (translate) ── */
+  .glossary-select {
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; cursor: pointer; max-width: 160px;
+  }
+
   /* ── audio player ── */
   .audio-player {
     width: 100%;

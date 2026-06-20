@@ -61,10 +61,10 @@ export const translateText = ({ text, sourceLang, targetLang, glossaryId, glossa
     body: JSON.stringify({ text, sourceLang: sourceLang === 'auto' ? undefined : sourceLang, targetLang, glossaryId, glossary })
   });
 
-export const translateJobSegments = (jobId, targetLang, sourceLang) =>
+export const translateJobSegments = (jobId, targetLang, sourceLang, glossaryId) =>
   jsonFetch(`/jobs/${jobId}/translate`, {
     method: 'POST',
-    body: JSON.stringify({ targetLang, sourceLang })
+    body: JSON.stringify({ targetLang, sourceLang, glossaryId })
   });
 
 export const detectLanguage = (text) =>
