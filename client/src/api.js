@@ -102,6 +102,13 @@ export const deleteJob = (id) => jsonFetch(`/jobs/${id}`, { method: 'DELETE' });
 export const renameSpeakers = (id, renames, merge = []) =>
   jsonFetch(`/jobs/${id}/speakers`, { method: 'PATCH', body: JSON.stringify({ renames, merge }) });
 
+// Edit transcript segments (inline correction). Backend re-syncs the flat text.
+export const updateSegments = (id, segments) =>
+  jsonFetch(`/jobs/${id}/segments`, { method: 'PATCH', body: JSON.stringify({ segments }) });
+
+// Stream URL for a job's stored source audio (range-enabled, for playback).
+export const jobAudioUrl = (id) => `${BASE}/jobs/${id}/audio`;
+
 // ---- exports ----
 
 export const exportTranscript = async (format, { transcription, segments, jobId, title, translatedSegments }) => {

@@ -2,7 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import { transcribeAudio } from '../utils/transcription.js';
 import { transcribeAudioLocal } from '../utils/localTranscription.js';
-import { createJob } from '../db/index.js';
+import { createJob, updateJob } from '../db/index.js';
+import { persistAudio } from '../utils/audioStore.js';
 import { needsChunking, splitAudio, mergeTranscriptions } from '../utils/audioChunk.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -130,9 +131,6 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
       transcription = await transcribeAudioLocal(filePath, { language });
     }
 
-    await fs.unlink(filePath).catch(() => {});
-    filePath = null;
-
     const job = await createJob({
       type: 'transcription',
       sourceName: req.file.originalname,
@@ -145,6 +143,16 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
       meta: { words: transcription.words || null }
     });
 
+    // Persist the source audio so the UI can play the transcript back. Keyed by
+    // job id; best-effort — failure here must not fail the transcription.
+    const audio = await persistAudio(job.id, filePath, req.file.originalname);
+    if (audio) {
+      await updateJob(job.id, { meta: { ...(job.meta || {}), audioFile: audio.file, audioMime: audio.mime } });
+    }
+    // persistAudio moves the file on success; clean up if it left anything behind.
+    await fs.unlink(filePath).catch(() => {});
+    filePath = null;
+
     res.json({
       success: true,
       jobId: job.id,
@@ -153,6 +161,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
       words: transcription.words || [],
       language: transcription.language,
       duration: transcription.duration,
+      hasAudio: !!audio,
       task,
       method
     });

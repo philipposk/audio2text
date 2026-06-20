@@ -6,6 +6,10 @@ export const apiLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  // Audio playback issues many HTTP range requests while seeking/buffering;
+  // counting each against the API budget would stall the player. Media streams
+  // are cheap static reads, so exempt them.
+  skip: (req) => req.method === 'GET' && /\/audio$/.test(req.path),
   message: { error: 'Too many requests, slow down.' }
 });
 

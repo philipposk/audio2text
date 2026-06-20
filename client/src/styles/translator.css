@@ -895,6 +895,16 @@
   /* ── mic btn active ── */
   .mic-btn.active { background: var(--accent); color: #fff; }
 
+  /* ── audio player ── */
+  .audio-player {
+    width: 100%;
+    height: 38px;
+    margin: 0 0 14px;
+    border-radius: 10px;
+  }
+  .ts.seekable { cursor: pointer; transition: color 0.12s, background 0.12s; }
+  .ts.seekable:hover { color: var(--accent); background: var(--accent-soft); }
+
   /* ── transcript search ── */
   .transcript-search {
     display: flex; align-items: center; gap: 8px;

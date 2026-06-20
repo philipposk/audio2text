@@ -2,6 +2,7 @@
 import express from 'express';
 import { listJobs, getJob, deleteJob, createJob, updateJob } from '../db/index.js';
 import { chatComplete } from '../utils/ai.js';
+import { streamAudio, audioFilePath, removeAudio } from '../utils/audioStore.js';
 
 const router = express.Router();
 
@@ -64,6 +65,47 @@ router.get('/:id', async (req, res, next) => {
     const job = await getJob(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json({ job });
+  } catch (e) { next(e); }
+});
+
+/**
+ * GET /api/jobs/:id/audio
+ * Streams the stored source audio (range-enabled for seeking). 404 if the job
+ * has no persisted audio (e.g. URL/live jobs, or running on Vercel).
+ */
+router.get('/:id/audio', async (req, res, next) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const file = job.meta?.audioFile;
+    if (!file) return res.status(404).json({ error: 'No audio stored for this job' });
+    return streamAudio(req, res, audioFilePath(file), job.meta?.audioMime);
+  } catch (e) { next(e); }
+});
+
+/**
+ * PATCH /api/jobs/:id/segments
+ * Body: { segments: [{start,end,text,speaker?}, ...] }
+ * Replaces the job's segments (used for inline transcript editing) and keeps the
+ * flat `text` in sync so exports/summaries reflect the edits.
+ */
+router.patch('/:id/segments', async (req, res, next) => {
+  try {
+    const { segments } = req.body || {};
+    if (!Array.isArray(segments)) {
+      return res.status(400).json({ error: 'segments must be an array' });
+    }
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const clean = segments.map(s => ({
+      start: Number(s.start) || 0,
+      end: Number(s.end) || 0,
+      text: String(s.text || ''),
+      ...(s.speaker ? { speaker: String(s.speaker) } : {}),
+    }));
+    const text = clean.map(s => s.text).join(' ').trim();
+    const updated = await updateJob(req.params.id, { segments: clean, text });
+    res.json({ success: true, job: updated });
   } catch (e) { next(e); }
 });
 
@@ -171,8 +213,11 @@ router.patch('/:id/speakers', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
+    const job = await getJob(req.params.id);
     const ok = await deleteJob(req.params.id);
     if (!ok) return res.status(404).json({ error: 'Job not found' });
+    // Remove the stored audio too so deleting a job reclaims its disk space.
+    if (job?.meta?.audioFile) await removeAudio(job.meta.audioFile);
     res.json({ success: true });
   } catch (e) { next(e); }
 });

@@ -5,6 +5,7 @@ import {
   transcribeFile, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
   listGlossaries, createGlossary, deleteGlossary, summarize,
+  updateSegments, jobAudioUrl,
   openLiveSocket, setApiKey, getApiKey, downloadBlob
 } from './api';
 import './styles/translator.css';
@@ -391,12 +392,23 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
+  const audioRef = useRef(null);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
 
   const segments = job.segments || [];
   const translatedSegs = translatedJob?.segments || [];
+
+  // Source audio is stored on self-hosted servers (not Vercel) for jobs created
+  // via file upload. meta.audioFile (history) or hasAudio (fresh) signals it.
+  const hasAudio = !!(job.meta?.audioFile || job.hasAudio);
+  const seekTo = (sec) => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = Number(sec) || 0;
+    a.play().catch(() => {});
+  };
 
   const fullText = job.transcription || segments.map(s => s.text).join(' ');
   const translatedText = translatedJob?.transcription || translatedSegs.map(s => s.text).join(' ');
@@ -478,6 +490,17 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
           </div>
         </div>
 
+        {/* Audio player (self-hosted file jobs only) */}
+        {hasAudio && (
+          <audio
+            ref={audioRef}
+            className="audio-player"
+            controls
+            preload="metadata"
+            src={jobAudioUrl(job.id)}
+          />
+        )}
+
         {/* Search bar */}
         <div className="transcript-search">
           <span className="ico">{I.search}</span>
@@ -544,7 +567,13 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             <div className="pane-body">
               {segments.length > 0 ? visibleSegs.map((seg, i) => (
                 <p key={i} className="speaker" data-speaker={seg.speaker || 'Speaker'}>
-                  <span className="ts">{fmtDuration(seg.start)}</span>
+                  <span
+                    className={`ts ${hasAudio ? 'seekable' : ''}`}
+                    onClick={hasAudio ? () => seekTo(seg.start) : undefined}
+                    title={hasAudio ? 'Play from here' : undefined}
+                  >
+                    {fmtDuration(seg.start)}
+                  </span>
                   {highlight(seg.text, search)}
                 </p>
               )) : (
