@@ -436,6 +436,7 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [summaryKind, setSummaryKind] = useState('generic');
   const [glossaryId, setGlossaryId] = useState('');
   const [editedSegs, setEditedSegs] = useState(null);
   const [editIdx, setEditIdx] = useState(-1);
@@ -535,10 +536,10 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     await onRefine(msg);
   };
 
-  const handleSummarize = async () => {
+  const handleSummarize = async (kind = summaryKind) => {
     setSummarizing(true);
     try {
-      const res = await summarize({ transcription: fullText, jobId: job.id, kind: 'generic', length: 'normal' });
+      const res = await summarize({ transcription: fullText, jobId: job.id, kind, length: 'normal' });
       setSummary(res.summary || res);
     } catch (err) {
       onError?.(err.message || 'Summary failed');
@@ -627,7 +628,21 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
           <div className="summary-panel">
             <div className="summary-head">
               <span className="summary-title">{I.spark} Summary</span>
-              <span className="summary-close" onClick={() => setSummary(null)}>✕</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  className="glossary-select"
+                  value={summaryKind}
+                  disabled={summarizing}
+                  onChange={e => { setSummaryKind(e.target.value); handleSummarize(e.target.value); }}
+                  title="Summary style"
+                >
+                  <option value="generic">General</option>
+                  <option value="meeting">Meeting</option>
+                  <option value="lecture">Lecture</option>
+                  <option value="podcast">Podcast</option>
+                </select>
+                <span className="summary-close" onClick={() => setSummary(null)}>✕</span>
+              </span>
             </div>
             {Array.isArray(summary.tldr) && summary.tldr.length > 0 && (
               <div className="summary-block">
