@@ -117,36 +117,47 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
       return res.status(400).json({ error: 'audio file or audioUrl is required' });
     }
 
-    // Replicate needs a public URL. For local file uploads we'd need a tunneled
-    // public URL; document the limitation rather than silently hosting files.
+    // Replicate needs the audio as a URL or a base64 data URI. For uploads we
+    // inline the file as a data URI (base64 adds ~33%, so guard the raw size).
+    let fileInput = audioUrl;
+    let sourceName = audioUrl;
+    const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
     if (req.file && !audioUrl) {
       filePath = req.file.path;
-      await fsp.unlink(filePath).catch(() => {});
-      return res.status(400).json({
-        error: 'File uploads not yet supported by the diarize route — pass audioUrl (Replicate requires a publicly reachable URL). Use the ingest route or host the audio first.'
-      });
+      if (req.file.size > MAX_UPLOAD_BYTES) {
+        await fsp.unlink(filePath).catch(() => {});
+        return res.status(413).json({
+          error: `File too large for inline diarization (${(req.file.size / 1048576).toFixed(1)}MB > 40MB). Pass a public audioUrl instead.`
+        });
+      }
+      const buf = await fsp.readFile(filePath);
+      const mime = req.file.mimetype || 'audio/mpeg';
+      fileInput = `data:${mime};base64,${buf.toString('base64')}`;
+      sourceName = req.file.originalname || 'upload';
     }
 
-    const input = { file: audioUrl };
+    const input = { file: fileInput };
     if (req.body.numSpeakers) input.num_speakers = parseInt(req.body.numSpeakers, 10);
     if (req.body.language) input.language = req.body.language;
 
-    console.log(`[diarize] running ${DEFAULT_MODEL} on ${audioUrl}`);
+    console.log(`[diarize] running ${DEFAULT_MODEL} on ${req.file ? `upload:${sourceName}` : audioUrl}`);
     const output = await replicateRun({ model: DEFAULT_MODEL, input, token });
     const segments = normalizeOutput(output);
+    // Free the temp upload once it has been sent to Replicate.
+    if (filePath) { await fsp.unlink(filePath).catch(() => {}); filePath = null; }
 
     const text = segments.map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text)).join('\n');
 
     const job = await createJob({
       type: 'diarization',
-      sourceName: audioUrl,
+      sourceName,
       language: req.body.language || null,
       task: 'diarize',
       method: 'replicate',
       duration: segments.length ? segments[segments.length - 1].end : null,
       text,
       segments,
-      meta: { model: DEFAULT_MODEL, audioUrl, speakers: Array.from(new Set(segments.map((s) => s.speaker).filter(Boolean))) }
+      meta: { model: DEFAULT_MODEL, source: sourceName, speakers: Array.from(new Set(segments.map((s) => s.speaker).filter(Boolean))) }
     });
 
     res.json({
@@ -166,7 +177,7 @@ router.get('/info', (req, res) => {
   res.json({
     enabled: !!process.env.REPLICATE_API_TOKEN,
     model: DEFAULT_MODEL,
-    notes: 'Audio must be passed via audioUrl (publicly reachable). File upload support pending.'
+    notes: 'Accepts a file upload (≤40MB, sent to Replicate as a base64 data URI) or a public audioUrl.'
   });
 });
 
