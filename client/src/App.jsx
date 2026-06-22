@@ -564,6 +564,16 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const visibleSegs = search ? segments.filter(s => matches(s.text)) : segments;
   const visibleTransSegs = search ? translatedSegs.filter(s => matches(s.text)) : translatedSegs;
 
+  // Low-confidence segments (Whisper avg_logprob below ~-0.4 correlates with
+  // likely errors) — flag them so editors review the risky parts, not the whole.
+  const isUncertain = (seg) => typeof seg.avg_logprob === 'number' && seg.avg_logprob < -0.4;
+  const uncertainCount = segments.filter(isUncertain).length;
+  const jumpUncertain = () => {
+    const idx = segments.findIndex(isUncertain);
+    if (idx < 0) return;
+    document.querySelector(`[data-seg="${idx}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
   const wordCount = fullText.split(/\s+/).filter(Boolean).length;
   const speakerCount = new Set(segments.map(s => s.speaker).filter(Boolean)).size;
 
@@ -632,6 +642,11 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </span>
           )}
           {search && <span className="search-clear" onClick={() => setSearch('')}>✕</span>}
+          {!search && uncertainCount > 0 && (
+            <span className="uncertain-jump" onClick={jumpUncertain} title="Low-confidence segments to review">
+              ⚠ {uncertainCount} to review
+            </span>
+          )}
         </div>
 
         {/* Summary panel */}
@@ -732,8 +747,8 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
                     />
                   ) : (
                     <span
-                      className={search ? '' : 'seg-text'}
-                      title={search ? undefined : 'Double-click to edit'}
+                      className={`${search ? '' : 'seg-text'} ${isUncertain(seg) ? 'seg-uncertain' : ''}`}
+                      title={isUncertain(seg) ? 'Low confidence — review this line' : (search ? undefined : 'Double-click to edit')}
                       onDoubleClick={search ? undefined : () => startEdit(i, seg.text)}
                     >
                       {highlight(seg.text, search)}
