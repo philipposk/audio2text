@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { transcribeAudio } from '../utils/transcription.js';
 import { transcribeAudioLocal } from '../utils/localTranscription.js';
-import { createJob, updateJob } from '../db/index.js';
+import { createJob, updateJob, getGlossary } from '../db/index.js';
 import { persistAudio } from '../utils/audioStore.js';
 import { needsChunking, splitAudio, mergeTranscriptions } from '../utils/audioChunk.js';
 import { fileURLToPath } from 'url';
@@ -13,6 +13,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const router = express.Router();
+
+// Format glossary terms as a compact natural-language sentence for Whisper's
+// prompt (≤~200 tokens). Whisper biases its decoding toward these spellings,
+// so domain terms/names come out right at the source.
+function glossaryToPrompt(entries) {
+  const terms = Object.keys(entries || {});
+  if (!terms.length) return '';
+  const picked = [];
+  for (const t of terms) {
+    if (`Terms used: ${[...picked, t].join(', ')}.`.length > 700) break;
+    picked.push(t);
+  }
+  return picked.length ? `Terms used: ${picked.join(', ')}.` : '';
+}
 
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
@@ -75,12 +89,21 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
 
+    // Prime Whisper with glossary terms (correct spellings at the source) +
+    // any user-supplied prompt. A natural sentence works better than a bare list.
+    let vocabularyPrompt = req.body.prompt || '';
+    if (req.body.glossaryId) {
+      const g = await getGlossary(req.body.glossaryId);
+      const gp = glossaryToPrompt(g?.entries);
+      if (gp) vocabularyPrompt = [gp, vocabularyPrompt].filter(Boolean).join(' ');
+    }
+
     console.log(`[transcribe] file=${req.file.filename} task=${task} lang=${language}`);
 
     let transcription;
     let method = 'openai';
 
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
       try {
         const big = await needsChunking(filePath);
         if (big) {
@@ -88,15 +111,21 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
           const { chunks, cleanup } = await splitAudio(filePath);
           try {
             const parts = [];
+            const basePrompt = vocabularyPrompt;
+            let carry = ''; // tail of the previous chunk's text, fed forward as context
             for (const chunk of chunks) {
+              // Whisper's prompt (≤224 tokens ≈ ~880 chars) primes spelling,
+              // casing, and vocabulary so terms don't reset at chunk boundaries.
+              const prompt = [basePrompt, carry].filter(Boolean).join(' ').slice(-880);
               const result = await transcribeAudio(chunk.path, {
                 task,
                 language,
-                prompt: req.body.prompt || '',
+                prompt,
                 response_format: 'verbose_json',
                 timestamp_granularities: granularities
               });
               parts.push({ result, startSec: chunk.startSec });
+              carry = (result.text || '').slice(-700);
             }
             transcription = mergeTranscriptions(parts);
           } finally {
@@ -106,7 +135,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
           transcription = await transcribeAudio(filePath, {
             task,
             language,
-            prompt: req.body.prompt || '',
+            prompt: vocabularyPrompt,
             response_format: 'verbose_json',
             timestamp_granularities: granularities
           });

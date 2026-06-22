@@ -26,6 +26,38 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Common Whisper hallucinations on silent/near-silent audio — fabricated boilerplate
+// it emits when there's nothing to transcribe (caption-site credits, filler thanks).
+const HALLUCINATION_PATTERNS = [
+  /^[\s\W]*$/,                              // empty / punctuation-only
+  /amara\.org/i,
+  /subtitle[sd]?\s+by/i,
+  /transcri(bed|ption)\s+by/i,
+  /\bthanks?\s+for\s+watching\b/i,
+];
+
+// Drop segments Whisper almost certainly fabricated, and rebuild the flat text
+// so it matches. Conservative: only removes a segment when Whisper itself rates
+// it very likely non-speech (no_speech_prob high AND avg_logprob low), or when
+// the text is a known boilerplate hallucination. Logged, never silent.
+function filterHallucinations(result) {
+  if (!result || !Array.isArray(result.segments) || result.segments.length === 0) return result;
+  const kept = [];
+  let dropped = 0;
+  for (const seg of result.segments) {
+    const text = (seg.text || '').trim();
+    const noSpeech = typeof seg.no_speech_prob === 'number' ? seg.no_speech_prob : 0;
+    const logprob = typeof seg.avg_logprob === 'number' ? seg.avg_logprob : 0;
+    const lowConfidenceNonSpeech = noSpeech > 0.6 && logprob < -0.5;
+    const boilerplate = HALLUCINATION_PATTERNS.some((re) => re.test(text));
+    if (lowConfidenceNonSpeech || boilerplate) { dropped++; continue; }
+    kept.push(seg);
+  }
+  if (dropped === 0) return result;
+  console.log(`[whisper] dropped ${dropped} likely-hallucination segment(s)`);
+  return { ...result, segments: kept, text: kept.map((s) => s.text).join('').trim() };
+}
+
 function isRetryable(error) {
   return (
     error.code === 'ECONNRESET' ||
@@ -114,7 +146,7 @@ export async function transcribeAudio(filePath, options = {}) {
           : await provider.client.audio.transcriptions.create(params);
 
         console.log(`[whisper] ok provider=${provider.name} attempt=${attempt} task=${task}`);
-        return result;
+        return filterHallucinations(result);
       } catch (error) {
         lastError = error;
         console.error(`[whisper] provider=${provider.name} attempt=${attempt} failed: ${error.message}`);

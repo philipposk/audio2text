@@ -114,7 +114,7 @@ router.post('/', async (req, res, next) => {
 
     let transcription;
     let method = 'openai';
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
       try {
         transcription = await transcribeAudio(downloadedPath, {
           task: useTask,

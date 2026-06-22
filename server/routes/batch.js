@@ -44,19 +44,22 @@ async function processOne(file, opts, req) {
     const { task, language, prompt, granularities } = opts;
     let transcription;
     let method = 'openai';
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
       try {
         if (await needsChunking(filePath)) {
           const { chunks, cleanup } = await splitAudio(filePath);
           try {
             const parts = [];
+            let carry = ''; // feed previous chunk's tail forward for term consistency
             for (const c of chunks) {
+              const chunkPrompt = [prompt, carry].filter(Boolean).join(' ').slice(-880);
               const r = await transcribeAudio(c.path, {
-                task, language, prompt,
+                task, language, prompt: chunkPrompt,
                 response_format: 'verbose_json',
                 timestamp_granularities: granularities
               });
               parts.push({ result: r, startSec: c.startSec });
+              carry = (r.text || '').slice(-700);
             }
             transcription = mergeTranscriptions(parts);
           } finally { await cleanup(); }
