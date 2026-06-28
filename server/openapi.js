@@ -104,12 +104,15 @@ export const openApiSpec = {
 
     '/api/detect-language': { post: { summary: 'Detect language of audio or text' } },
 
-    '/api/summary': { post: { summary: 'Generate TL;DR + key points + action items' } },
+    '/api/summary': { post: { summary: 'Generate TL;DR + key points + action items (kind: meeting/lecture/podcast/generic)' } },
+    '/api/chapters': { post: { summary: 'Split a transcript into titled topic chapters with start times' } },
 
-    '/api/diarize': { post: { summary: 'Speaker diarization via Replicate (audioUrl required)' } },
+    '/api/diarize': { post: { summary: 'Speaker diarization via Replicate (file upload or audioUrl)' } },
     '/api/diarize/info': { get: { summary: 'Diarization configuration' } },
 
     '/api/burn': { post: { summary: 'Hardcode subtitles into video' } },
+
+    '/api/share/{token}': { get: { summary: 'Public read-only shared transcript (no auth, transcript fields only)' } },
 
     '/api/jobs': {
       get: {
@@ -126,8 +129,11 @@ export const openApiSpec = {
       }
     },
     '/api/jobs/{id}': { get: { summary: 'Get full job with segments' }, delete: { summary: 'Delete a job' } },
-    '/api/jobs/{id}/translate': { post: { summary: 'Bulk-translate every segment, persist as new job' } },
+    '/api/jobs/{id}/audio': { get: { summary: 'Stream the stored source audio (HTTP range supported)' } },
+    '/api/jobs/{id}/segments': { patch: { summary: 'Replace segments (inline transcript editing); re-syncs flat text' } },
+    '/api/jobs/{id}/translate': { post: { summary: 'Bulk-translate every segment (optional glossaryId), persist as new job' } },
     '/api/jobs/{id}/speakers': { patch: { summary: 'Rename / merge speaker labels' } },
+    '/api/jobs/{id}/share': { post: { summary: 'Create a public share token' }, delete: { summary: 'Revoke sharing' } },
 
     '/api/tasks/transcribe': { post: { summary: 'Async transcription (returns taskId)' } },
     '/api/tasks/{id}': { get: { summary: 'Get async task status' } },
