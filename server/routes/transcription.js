@@ -126,6 +126,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
               });
               parts.push({ result, startSec: chunk.startSec });
               carry = (result.text || '').slice(-700);
+              method = result.provider || method;
             }
             transcription = mergeTranscriptions(parts);
           } finally {
@@ -139,6 +140,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
             response_format: 'verbose_json',
             timestamp_granularities: granularities
           });
+          method = transcription.provider || method;
         }
       } catch (err) {
         const recoverable = /quota|billing|exceeded|Connection/i.test(err.message || '');

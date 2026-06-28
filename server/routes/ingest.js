@@ -123,6 +123,7 @@ router.post('/', async (req, res, next) => {
           response_format: 'verbose_json',
           timestamp_granularities: granularities
         });
+        method = transcription.provider || method;
       } catch (err) {
         if (!/quota|billing|Connection/i.test(err.message || '')) throw err;
         method = 'local';

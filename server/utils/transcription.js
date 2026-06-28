@@ -146,7 +146,9 @@ export async function transcribeAudio(filePath, options = {}) {
           : await provider.client.audio.transcriptions.create(params);
 
         console.log(`[whisper] ok provider=${provider.name} attempt=${attempt} task=${task}`);
-        return filterHallucinations(result);
+        // Tag the result with the provider that produced it so callers can record
+        // an accurate `method` on the job (was hardcoded 'openai').
+        return filterHallucinations(Object.assign(result, { provider: provider.name }));
       } catch (error) {
         lastError = error;
         console.error(`[whisper] provider=${provider.name} attempt=${attempt} failed: ${error.message}`);

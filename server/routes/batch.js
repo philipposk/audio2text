@@ -60,6 +60,7 @@ async function processOne(file, opts, req) {
               });
               parts.push({ result: r, startSec: c.startSec });
               carry = (r.text || '').slice(-700);
+              method = r.provider || method;
             }
             transcription = mergeTranscriptions(parts);
           } finally { await cleanup(); }
@@ -69,6 +70,7 @@ async function processOne(file, opts, req) {
             response_format: 'verbose_json',
             timestamp_granularities: granularities
           });
+          method = transcription.provider || method;
         }
       } catch (err) {
         if (!/quota|billing|Connection/i.test(err.message || '')) throw err;
