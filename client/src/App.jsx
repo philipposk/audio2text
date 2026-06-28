@@ -5,7 +5,7 @@ import {
   transcribeFile, transcribeBatch, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
   listGlossaries, createGlossary, deleteGlossary, summarize, getChapters,
-  updateSegments, jobAudioUrl,
+  updateSegments, jobAudioUrl, shareJob, getSharedTranscript,
   openLiveSocket, setApiKey, getApiKey, downloadBlob
 } from './api';
 import './styles/translator.css';
@@ -561,6 +561,18 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     }
   };
 
+  const handleShare = async () => {
+    try {
+      const res = await shareJob(job.id);
+      const url = `${window.location.origin}/s/${res.shareToken}`;
+      await navigator.clipboard.writeText(url).catch(() => {});
+      setCopying('share');
+      setTimeout(() => setCopying(null), 2000);
+    } catch (err) {
+      onError?.(err.message || 'Share failed');
+    }
+  };
+
   const handleChapters = async () => {
     setChaptering(true);
     try {
@@ -619,6 +631,9 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </button>
             <button className="btn sm" onClick={handleChapters} disabled={chaptering}>
               {I.history} {chaptering ? 'Detecting…' : 'Chapters'}
+            </button>
+            <button className="btn sm" onClick={handleShare}>
+              {copying === 'share' ? 'Link copied!' : 'Share'}
             </button>
             {!translatedJob && glossaries.length > 0 && (
               <select
@@ -1326,8 +1341,66 @@ function ErrorBanner({ message, onDismiss }) {
   );
 }
 
+// ─── Public shared-transcript page (no account needed) ────────────────────────
+function SharePage({ token }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', localStorage.getItem('t_theme') || 'light');
+    getSharedTranscript(token).then(setData).catch(e => setError(e.message || 'Not found'));
+  }, [token]);
+
+  const segs = data?.segments || [];
+  const fullText = data?.text || segs.map(s => s.text).join(' ');
+
+  return (
+    <div className="share-page">
+      <header className="share-header">
+        <div className="brand-mark">T</div>
+        <span className="brand-name">Translator</span>
+        <span className="share-badge">Shared transcript</span>
+      </header>
+      <main className="share-body">
+        {error && <p className="share-error">{error}</p>}
+        {!data && !error && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+        {data && (
+          <>
+            <div className="share-meta">
+              {data.language && <span>{langInfo(data.language).name}</span>}
+              {data.duration ? <span>· {fmtDuration(data.duration)}</span> : null}
+              <button className="btn sm" style={{ marginLeft: 'auto' }}
+                onClick={async () => { await navigator.clipboard.writeText(fullText).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+                {copied ? 'Copied!' : 'Copy text'}
+              </button>
+            </div>
+            <div className="pane" style={{ borderRadius: 12 }}>
+              <div className="pane-body">
+                {segs.length > 0 ? segs.map((s, i) => (
+                  <p key={i} className="speaker" data-speaker={s.speaker || 'Speaker'}>
+                    <span className="ts">{fmtDuration(s.start)}</span>{s.text}
+                  </p>
+                )) : <p className="speaker">{fullText}</p>}
+              </div>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  // Public shared-transcript view: /s/<token> renders read-only, no app shell.
+  const shareMatch = typeof window !== 'undefined' && window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)/);
+  if (shareMatch) return <SharePage token={shareMatch[1]} />;
+
+  return <MainApp />;
+}
+
+function MainApp() {
   // Persisted prefs
   const [theme, setTheme] = useState(() => localStorage.getItem('t_theme') || 'light');
   const [accent, setAccent] = useState(() => localStorage.getItem('t_accent') || '#1f5d4c');

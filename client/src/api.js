@@ -123,6 +123,11 @@ export const updateSegments = (id, segments) =>
 // Stream URL for a job's stored source audio (range-enabled, for playback).
 export const jobAudioUrl = (id) => `${BASE}/jobs/${id}/audio`;
 
+// Public sharing: create/revoke a token, and fetch a shared transcript (no auth).
+export const shareJob = (id) => jsonFetch(`/jobs/${id}/share`, { method: 'POST' });
+export const unshareJob = (id) => jsonFetch(`/jobs/${id}/share`, { method: 'DELETE' });
+export const getSharedTranscript = (token) => jsonFetch(`/share/${token}`);
+
 // ---- exports ----
 
 export const exportTranscript = async (format, { transcription, segments, jobId, title, translatedSegments }) => {

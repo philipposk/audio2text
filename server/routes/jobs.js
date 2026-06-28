@@ -1,5 +1,6 @@
 // History + bulk-translation endpoints for transcription/translation jobs.
 import express from 'express';
+import { randomBytes } from 'crypto';
 import { listJobs, getJob, deleteJob, createJob, updateJob, getGlossary } from '../db/index.js';
 import { chatComplete } from '../utils/ai.js';
 import { streamAudio, audioFilePath, removeAudio } from '../utils/audioStore.js';
@@ -221,6 +222,34 @@ router.patch('/:id/speakers', async (req, res, next) => {
     });
 
     res.json({ success: true, job: { id: updated.id, speakers, segmentCount: newSegments.length } });
+  } catch (e) { next(e); }
+});
+
+/**
+ * POST /api/jobs/:id/share  → create (or return existing) public share token.
+ * DELETE same path          → revoke sharing.
+ * The token is read at the public, unauthenticated GET /api/share/:token route.
+ */
+router.post('/:id/share', async (req, res, next) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const shareToken = job.meta?.shareToken || randomBytes(12).toString('base64url');
+    if (!job.meta?.shareToken) {
+      await updateJob(job.id, { meta: { ...(job.meta || {}), shareToken } });
+    }
+    res.json({ success: true, shareToken, path: `/s/${shareToken}` });
+  } catch (e) { next(e); }
+});
+
+router.delete('/:id/share', async (req, res, next) => {
+  try {
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const meta = { ...(job.meta || {}) };
+    delete meta.shareToken;
+    await updateJob(job.id, { meta });
+    res.json({ success: true });
   } catch (e) { next(e); }
 });
 

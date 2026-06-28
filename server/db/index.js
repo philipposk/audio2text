@@ -123,6 +123,12 @@ async function sb_getJob(jobId) {
   return jobFromRow(data);
 }
 
+async function sb_getJobByShareToken(token) {
+  const { data, error } = await sb().from('translator_jobs').select('*').filter('meta->>shareToken', 'eq', token).single();
+  if (error) return null;
+  return jobFromRow(data);
+}
+
 async function sb_updateJob(jobId, patch) {
   const col = {};
   if (patch.text !== undefined) col.text = patch.text;
@@ -298,6 +304,11 @@ async function lo_getJob(jobId) {
   return d.data.jobs.find(j => j.id === jobId) || null;
 }
 
+async function lo_getJobByShareToken(token) {
+  const d = await getDb();
+  return d.data.jobs.find(j => j.meta?.shareToken === token) || null;
+}
+
 async function lo_updateJob(jobId, patch) {
   const d = await getDb();
   const job = d.data.jobs.find(j => j.id === jobId);
@@ -437,6 +448,7 @@ function dispatch(sbFn, loFn) {
 export const createJob       = dispatch(sb_createJob,       lo_createJob);
 export const listJobs        = dispatch(sb_listJobs,        lo_listJobs);
 export const getJob          = dispatch(sb_getJob,          lo_getJob);
+export const getJobByShareToken = dispatch(sb_getJobByShareToken, lo_getJobByShareToken);
 export const updateJob       = dispatch(sb_updateJob,       lo_updateJob);
 export const deleteJob       = dispatch(sb_deleteJob,       lo_deleteJob);
 

@@ -14,6 +14,7 @@ import ingestRoutes from './routes/ingest.js';
 import jobRoutes from './routes/jobs.js';
 import summaryRoutes from './routes/summary.js';
 import chapterRoutes from './routes/chapters.js';
+import shareRoutes from './routes/share.js';
 import diarizeRoutes from './routes/diarize.js';
 import detectRoutes from './routes/detect.js';
 import batchRoutes from './routes/batch.js';
@@ -49,6 +50,9 @@ export function createApp({ withWebsocket = process.env.NODE_ENV !== 'test' } = 
 
   // Structured request logging (silent under tests).
   app.use(requestLogger);
+
+  // Public share route — mounted BEFORE auth so recipients need no API key.
+  app.use('/api/share', shareRoutes);
 
   // API key attachment runs for every /api request so downstream routes can
   // see req.apiKey when present. Quota enforcement is applied on heavy paths.
