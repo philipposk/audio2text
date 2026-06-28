@@ -5,9 +5,10 @@
 
 import express from 'express';
 import multer from 'multer';
+import { UPLOADS_DIR } from '../utils/paths.js';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import { transcribeAudio } from '../utils/transcription.js';
 import { transcribeAudioLocal } from '../utils/localTranscription.js';
 import { needsChunking, splitAudio, mergeTranscriptions } from '../utils/audioChunk.js';
@@ -23,7 +24,7 @@ const router = express.Router();
 // the audio format from it, and rejects extensionless files ("Unrecognized file
 // format"). multer's bare `dest` strips the extension, so use diskStorage.
 const storage = multer.diskStorage({
-  destination: join(__dirname, '../../uploads'),
+  destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
     const suffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const safe = file.originalname.replace(/[/\\]/g, '_').replace(/\.{2,}/g, '_').slice(0, 180);

@@ -8,9 +8,10 @@
 
 import express from 'express';
 import multer from 'multer';
+import { UPLOADS_DIR } from '../utils/paths.js';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import { transcribeAudio } from '../utils/transcription.js';
 import { chatComplete } from '../utils/ai.js';
 
@@ -19,7 +20,7 @@ const __dirname = dirname(__filename);
 
 const router = express.Router();
 const upload = multer({
-  dest: join(__dirname, '../../uploads'),
+  dest: UPLOADS_DIR,
   limits: { fileSize: 25 * 1024 * 1024 }
 });
 

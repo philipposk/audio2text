@@ -10,6 +10,7 @@
 
 import express from 'express';
 import multer from 'multer';
+import { UPLOADS_DIR, TEMP_DIR } from '../utils/paths.js';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import fs from 'fs/promises';
@@ -24,7 +25,7 @@ const __dirname = dirname(__filename);
 
 const router = express.Router();
 const upload = multer({
-  dest: join(__dirname, '../../uploads'),
+  dest: UPLOADS_DIR,
   limits: { fileSize: 500 * 1024 * 1024 } // videos can be big
 });
 
@@ -60,7 +61,7 @@ router.post('/', upload.single('video'), async (req, res, next) => {
       return res.status(400).json({ error: 'Provide srt or jobId' });
     }
 
-    const tmpDir = join(__dirname, '../../temp');
+    const tmpDir = TEMP_DIR;
     await fs.mkdir(tmpDir, { recursive: true });
     srtPath = join(tmpDir, `burn-${Date.now()}.srt`);
     outputPath = join(tmpDir, `burn-${Date.now()}.mp4`);

@@ -7,6 +7,7 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import { TEMP_DIR } from '../utils/paths.js';
 import { dirname, join } from 'path';
 import { getJob } from '../db/index.js';
 
@@ -91,7 +92,7 @@ router.post('/:format', async (req, res, next) => {
       }));
     }
 
-    const tempDir = join(__dirname, '../../temp');
+    const tempDir = TEMP_DIR;
     await fs.mkdir(tempDir, { recursive: true });
 
     let filePath;

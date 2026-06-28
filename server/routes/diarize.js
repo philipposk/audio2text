@@ -17,9 +17,10 @@
 
 import express from 'express';
 import multer from 'multer';
+import { UPLOADS_DIR } from '../utils/paths.js';
 import fsp from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import { createJob } from '../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,7 +29,7 @@ const __dirname = dirname(__filename);
 const router = express.Router();
 
 const upload = multer({
-  dest: join(__dirname, '../../uploads'),
+  dest: UPLOADS_DIR,
   limits: { fileSize: 100 * 1024 * 1024 }
 });
 

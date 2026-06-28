@@ -12,6 +12,7 @@
 
 import express from 'express';
 import youtubeDl from 'youtube-dl-exec';
+import { UPLOADS_DIR } from '../utils/paths.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs/promises';
@@ -76,7 +77,7 @@ router.post('/', async (req, res, next) => {
     }
     validateUrl(url);
 
-    const tmpDir = join(__dirname, '../../uploads');
+    const tmpDir = UPLOADS_DIR;
     await fs.mkdir(tmpDir, { recursive: true });
     // Unique token per request so concurrent ingests never pick up each other's
     // downloaded file (a shared `ingest-<timestamp>` prefix + dir-glob would race).

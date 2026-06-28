@@ -5,8 +5,9 @@ import { transcribeAudioLocal } from '../utils/localTranscription.js';
 import { createJob, updateJob, getGlossary } from '../db/index.js';
 import { persistAudio } from '../utils/audioStore.js';
 import { needsChunking, splitAudio, mergeTranscriptions } from '../utils/audioChunk.js';
+import { UPLOADS_DIR } from '../utils/paths.js';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import fs from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,9 +31,8 @@ function glossaryToPrompt(entries) {
 
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = join(__dirname, '../../uploads');
-    await fs.mkdir(uploadDir, { recursive: true });
-    cb(null, uploadDir);
+    await fs.mkdir(UPLOADS_DIR, { recursive: true });
+    cb(null, UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);

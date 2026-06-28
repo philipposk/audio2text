@@ -6,11 +6,8 @@
 
 import fs from 'fs';
 import fsp from 'fs/promises';
-import { fileURLToPath } from 'url';
-import { dirname, join, extname } from 'path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const AUDIO_DIR = join(__dirname, '../../uploads/audio');
+import { join, extname } from 'path';
+import { AUDIO_DIR } from './paths.js';
 
 const MIME_BY_EXT = {
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'audio/mp4',
