@@ -6,7 +6,7 @@ import {
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
   listGlossaries, createGlossary, deleteGlossary, summarize, getChapters,
   getQuestions, updateSegments, jobAudioUrl, shareJob, getSharedTranscript,
-  openLiveSocket, setApiKey, getApiKey, downloadBlob
+  liveTranscribeChunk, liveFinalize, setApiKey, getApiKey, downloadBlob
 } from './api';
 import './styles/translator.css';
 
@@ -1029,100 +1029,128 @@ function LiveView({ source, onJobCreated }) {
   const [liveText, setLiveText] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [errMsg, setErrMsg] = useState('');
-  const mrRef = useRef(null);
-  const wsRef = useRef(null);
-  const timerRef = useRef(null);
 
-  const stopTimer = () => { clearInterval(timerRef.current); };
+  const streamRef = useRef(null);
+  const mrRef = useRef(null);
+  const timerRef = useRef(null);
+  const recordingRef = useRef(false);
+  const idxRef = useRef(0);
+  const clipsRef = useRef([]);          // [{ idx, text, segments, duration, language }]
+  const pendingRef = useRef(new Set()); // in-flight /live/chunk POSTs
+  const langRef = useRef('auto');
+
+  const CLIP_MS = 5000; // each standalone clip is ~5s → near-live, Vercel-safe
+
+  const stopTimer = () => clearInterval(timerRef.current);
+
+  const pickMime = () =>
+    MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+
+  // Rebuild the visible transcript from whatever clips have returned, in order.
+  const rebuildText = () => {
+    const ordered = [...clipsRef.current].sort((a, b) => a.idx - b.idx);
+    setLiveText(ordered.map(c => c.text).filter(Boolean).join(' ').trim());
+  };
+
+  const sendClip = (blob, idx) => {
+    if (!blob || blob.size < 1200) return; // skip silent/near-empty clips
+    const p = liveTranscribeChunk(blob, { language: langRef.current, task: 'transcribe' })
+      .then(r => {
+        // Lock onto the first detected language so later clips don't re-detect.
+        if (langRef.current === 'auto' && r.language) langRef.current = r.language;
+        clipsRef.current.push({ idx, text: r.text || '', segments: r.segments || [], duration: r.duration || 0, language: r.language });
+        rebuildText();
+      })
+      .catch(err => { setErrMsg(err.message || 'Live chunk failed'); })
+      .finally(() => { pendingRef.current.delete(p); });
+    pendingRef.current.add(p);
+  };
+
+  // Record one standalone clip, then immediately start the next while this one
+  // uploads. Restarting MediaRecorder per clip (vs timeslice) guarantees each
+  // blob is a complete, independently-decodable file Whisper can read.
+  const recordCycle = () => {
+    if (!recordingRef.current || !streamRef.current) return;
+    const mime = pickMime();
+    const mr = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+    const parts = [];
+    const myIdx = idxRef.current++;
+    mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) parts.push(e.data); };
+    mr.onstop = () => {
+      const blob = new Blob(parts, { type: mime || 'audio/webm' });
+      if (recordingRef.current) recordCycle(); // next clip starts right away
+      sendClip(blob, myIdx);                    // transcribe this one in parallel
+    };
+    mrRef.current = mr;
+    mr.start();
+    setTimeout(() => { if (mr.state !== 'inactive') mr.stop(); }, CLIP_MS);
+  };
 
   const start = async () => {
-    setErrMsg('');
-    setLiveText('');
+    setErrMsg(''); setLiveText('');
+    clipsRef.current = []; pendingRef.current = new Set(); idxRef.current = 0;
+    langRef.current = source === 'auto' ? 'auto' : source;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const ws = openLiveSocket({ language: source === 'auto' ? 'el' : source, task: 'transcribe', ext: 'webm' });
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
-        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-        mr.ondataavailable = (e) => {
-          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
-        };
-        mr.start(500);
-        mrRef.current = mr;
-        setStatus('recording');
-        setElapsed(0);
-        timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'partial' && data.text) setLiveText(data.text);
-          if (data.type === 'final') {
-            stopTimer();
-            if (data.jobId) {
-              onJobCreated(data.jobId);
-            } else {
-              setStatus('idle');
-            }
-          }
-          if (data.type === 'error') {
-            setErrMsg(data.message || 'Transcription failed');
-            setStatus('error');
-            stopTimer();
-          }
-        } catch { }
-      };
-
-      ws.onerror = () => {
-        setErrMsg('WebSocket error — is the server running?');
-        setStatus('error');
-        stopTimer();
-      };
-
-      ws.onclose = () => {
-        // If still "processing", server closed unexpectedly
-        setStatus(s => s === 'processing' ? 'error' : s);
-      };
-
+      streamRef.current = stream;
+      recordingRef.current = true;
+      setStatus('recording');
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      recordCycle();
     } catch (err) {
       setErrMsg('Microphone access denied: ' + err.message);
       setStatus('error');
     }
   };
 
-  const stop = () => {
-    const ws = wsRef.current;
-    const mr = mrRef.current;
+  const stop = async () => {
+    recordingRef.current = false;
     stopTimer();
     setStatus('processing');
 
-    // Stop MediaRecorder — let ondataavailable flush remaining chunks
-    if (mr && mr.state !== 'inactive') {
-      mr.addEventListener('stop', () => {
-        // All chunks flushed — now tell server to finalize
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'close' }));
-        }
-      }, { once: true });
-      mr.stop();
-    } else if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'close' }));
-    }
+    const mr = mrRef.current;
+    if (mr && mr.state !== 'inactive') mr.stop(); // flushes the final clip via onstop
+    streamRef.current?.getTracks().forEach(t => t.stop());
 
-    // Stop mic stream
-    mr?.stream?.getTracks().forEach(t => t.stop());
+    // Let the final clip's onstop queue its upload, then drain all pending POSTs.
+    await new Promise(r => setTimeout(r, 400));
+    await Promise.allSettled([...pendingRef.current]);
+
+    // Stitch clips in order; offset each clip's segment times by the cumulative
+    // duration of the clips before it so timestamps stay absolute.
+    const ordered = [...clipsRef.current].sort((a, b) => a.idx - b.idx);
+    let offset = 0;
+    const segments = [];
+    for (const c of ordered) {
+      for (const s of c.segments) {
+        segments.push({ ...s, start: (s.start || 0) + offset, end: (s.end || 0) + offset });
+      }
+      offset += c.duration || 0;
+    }
+    const text = ordered.map(c => c.text).filter(Boolean).join(' ').trim();
+    if (!text && segments.length === 0) {
+      setErrMsg('No speech captured.'); setStatus('error'); return;
+    }
+    try {
+      const { jobId } = await liveFinalize({
+        text, segments,
+        language: ordered.find(c => c.language)?.language || (source === 'auto' ? null : source),
+        task: 'transcribe', duration: offset, sourceName: 'Live recording'
+      });
+      if (jobId) onJobCreated(jobId); else setStatus('idle');
+    } catch (err) {
+      setErrMsg(err.message || 'Could not save recording'); setStatus('error');
+    }
   };
 
   // Cleanup on unmount
   useEffect(() => () => {
+    recordingRef.current = false;
     stopTimer();
-    mrRef.current?.stream?.getTracks().forEach(t => t.stop());
-    wsRef.current?.close();
+    streamRef.current?.getTracks().forEach(t => t.stop());
   }, []);
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
@@ -1183,8 +1211,7 @@ function LiveView({ source, onJobCreated }) {
 
       {errMsg && status === 'error' && (
         <div style={{ background: 'var(--accent-soft)', border: '1px solid #c7522a33', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#c7522a', marginBottom: 16 }}>
-          <strong>Needs OPENAI_API_KEY</strong> in server <code>.env</code> for live transcription to work.
-          Check server is running on port 3000.
+          {errMsg}
         </div>
       )}
 

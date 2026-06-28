@@ -160,7 +160,22 @@ export const createGlossary = (g) => jsonFetch('/glossaries', { method: 'POST', 
 export const getGlossary = (id) => jsonFetch(`/glossaries/${id}`);
 export const deleteGlossary = (id) => jsonFetch(`/glossaries/${id}`, { method: 'DELETE' });
 
-// ---- live websocket ----
+// ---- live transcription (HTTP chunks — works on Vercel; no WebSocket) ----
+
+// Transcribe one short standalone clip. Returns { text, segments, duration, language }.
+export const liveTranscribeChunk = (blob, { language = 'auto', task = 'transcribe' } = {}) => {
+  const fd = new FormData();
+  fd.append('audio', blob, 'clip.webm');
+  if (language && language !== 'auto') fd.append('language', language);
+  fd.append('task', task);
+  return formFetch('/live/chunk', fd);
+};
+
+// Persist the accumulated live transcript as a single job. Returns { jobId }.
+export const liveFinalize = (payload) =>
+  jsonFetch('/live/finalize', { method: 'POST', body: JSON.stringify(payload) });
+
+// ---- live websocket (self-hosted only; Vercel can't hold WS connections) ----
 
 export function openLiveSocket({ language = 'el', task = 'transcribe', ext = 'webm' } = {}) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';

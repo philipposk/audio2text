@@ -23,6 +23,7 @@ import burnRoutes from './routes/burn.js';
 import asyncRoutes from './routes/async.js';
 import keyRoutes from './routes/keys.js';
 import glossaryRoutes from './routes/glossary.js';
+import liveChunkRoutes from './routes/liveChunk.js';
 import { registerLiveWs } from './routes/live.js';
 
 import { apiLimiter, heavyLimiter } from './middleware/rateLimit.js';
@@ -87,6 +88,9 @@ export function createApp({ withWebsocket = process.env.NODE_ENV !== 'test' } = 
   app.use('/api/tasks', asyncRoutes);
   app.use('/api/keys', keyRoutes);
   app.use('/api/glossaries', glossaryRoutes);
+  // HTTP live transcription (Vercel-compatible; the WS route below is for
+  // self-hosted). POST /api/live/chunk + /api/live/finalize.
+  app.use('/api/live', liveChunkRoutes);
 
   app.get('/api/openapi.json', (req, res) => res.json(openApiSpec));
 

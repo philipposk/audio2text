@@ -109,6 +109,8 @@ export const openApiSpec = {
     '/api/questions': { post: { summary: 'Detect questions raised in a transcript and flag which were left unanswered (jobId or transcription)' } },
     '/api/chapters': { post: { summary: 'Split a transcript into titled topic chapters with start times' } },
 
+    '/api/live/chunk': { post: { summary: 'Transcribe one short live clip (multipart audio); no job created — Vercel-compatible live transcription' } },
+    '/api/live/finalize': { post: { summary: 'Persist an accumulated live transcript as a single job' } },
     '/api/diarize': { post: { summary: 'Speaker diarization via Replicate (file upload or audioUrl)' } },
     '/api/diarize/info': { get: { summary: 'Diarization configuration' } },
 
