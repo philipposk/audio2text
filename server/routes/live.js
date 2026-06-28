@@ -35,8 +35,10 @@ export function registerLiveWs(app) {
   }
 
   app.ws('/api/live', async (ws, req) => {
-    if (!process.env.OPENAI_API_KEY) {
-      ws.send(JSON.stringify({ type: 'error', message: 'OPENAI_API_KEY required for live transcription' }));
+    // Live transcription works with either provider — Groq Whisper (preferred,
+    // cheaper/faster) or OpenAI. Only block when neither is configured.
+    if (!process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Set GROQ_API_KEY or OPENAI_API_KEY for live transcription' }));
       ws.close();
       return;
     }
