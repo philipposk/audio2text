@@ -47,15 +47,26 @@ router.post('/', async (req, res, next) => {
     const lengthHint = LENGTH_GUIDANCE[length] || LENGTH_GUIDANCE.normal;
     const langClause = targetLang ? ` Write all output in ${targetLang}.` : '';
 
+    // Meeting kind also produces meeting-intelligence fields: a narrative
+    // overview, the list of attendees/speakers, and per-topic sections each
+    // with its own notes + owner-attributed actions.
+    const meeting = kind === 'meeting';
+    const meetingHint = meeting
+      ? `\nAlso fill "overview" (2-4 sentence narrative), "attendees" (names/speakers heard), and "sections" (one per distinct topic, each with its own "notes" and owner-attributed "actions"). Use speaker labels from the transcript as owners when present. Leave a field as [] or "" if genuinely absent — never invent attendees or owners.`
+      : '\nLeave "overview" "", and "attendees"/"sections" as []. ';
+
     const systemPrompt = `You are a transcript summarizer. ${kindHint}
 Return STRICT JSON with this exact schema:
 {
   "tldr": [ "string", ... ],
   "keyPoints": [ "string", ... ],
   "actionItems": [ { "task": "string", "owner": "string|null", "due": "string|null" }, ... ],
-  "topics": [ "string", ... ]
+  "topics": [ "string", ... ],
+  "overview": "string",
+  "attendees": [ "string", ... ],
+  "sections": [ { "title": "string", "notes": [ "string", ... ], "actions": [ { "task": "string", "owner": "string|null" }, ... ] }, ... ]
 }
-${lengthHint}${langClause}
+${lengthHint}${meetingHint}${langClause}
 No markdown, no commentary, no extra keys.`;
 
     const { text: raw, usage, provider, model } = await chatComplete({
@@ -80,7 +91,10 @@ No markdown, no commentary, no extra keys.`;
         tldr: parsed.tldr || [],
         keyPoints: parsed.keyPoints || [],
         actionItems: parsed.actionItems || [],
-        topics: parsed.topics || []
+        topics: parsed.topics || [],
+        overview: parsed.overview || '',
+        attendees: parsed.attendees || [],
+        sections: Array.isArray(parsed.sections) ? parsed.sections : []
       },
       provider,
       model,

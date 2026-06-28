@@ -62,6 +62,7 @@ export const openApiSpec = {
               task: { type: 'string', enum: ['transcribe', 'translate'], default: 'transcribe' },
               language: { type: 'string', default: 'el' },
               word_timestamps: { type: 'boolean' },
+              quality: { type: 'string', enum: ['fast', 'accurate'], default: 'fast', description: 'accurate = Groq whisper-large-v3 / OpenAI gpt-4o-transcribe' },
               prompt: { type: 'string' }
             }, required: ['audio']
           } } }
@@ -104,7 +105,8 @@ export const openApiSpec = {
 
     '/api/detect-language': { post: { summary: 'Detect language of audio or text' } },
 
-    '/api/summary': { post: { summary: 'Generate TL;DR + key points + action items (kind: meeting/lecture/podcast/generic)' } },
+    '/api/summary': { post: { summary: 'Generate TL;DR + key points + action items; kind=meeting also returns overview, attendees, and per-topic sections (notes + owner-attributed actions)' } },
+    '/api/questions': { post: { summary: 'Detect questions raised in a transcript and flag which were left unanswered (jobId or transcription)' } },
     '/api/chapters': { post: { summary: 'Split a transcript into titled topic chapters with start times' } },
 
     '/api/diarize': { post: { summary: 'Speaker diarization via Replicate (file upload or audioUrl)' } },
@@ -133,6 +135,7 @@ export const openApiSpec = {
     '/api/jobs/{id}/segments': { patch: { summary: 'Replace segments (inline transcript editing); re-syncs flat text' } },
     '/api/jobs/{id}/translate': { post: { summary: 'Bulk-translate every segment (optional glossaryId), persist as new job' } },
     '/api/jobs/{id}/speakers': { patch: { summary: 'Rename / merge speaker labels' } },
+    '/api/jobs/{id}/ask': { post: { summary: 'Grounded Q&A — answer a question using ONLY this job\'s transcript' } },
     '/api/jobs/{id}/share': { post: { summary: 'Create a public share token' }, delete: { summary: 'Revoke sharing' } },
 
     '/api/tasks/transcribe': { post: { summary: 'Async transcription (returns taskId)' } },

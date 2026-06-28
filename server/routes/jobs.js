@@ -253,6 +253,55 @@ router.delete('/:id/share', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/**
+ * POST /api/jobs/:id/ask
+ * Body: { question, history?: [{role, content}] }
+ * Answers a question grounded ONLY in this job's transcript (RAG over one doc),
+ * so the model can't drift into outside knowledge. Returns { answer }.
+ */
+router.post('/:id/ask', async (req, res, next) => {
+  try {
+    const { question, history = [] } = req.body || {};
+    if (!question || !String(question).trim()) {
+      return res.status(400).json({ error: 'question required' });
+    }
+    const job = await getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Prefer speaker-attributed segment text (gives the model who-said-what);
+    // fall back to the flat transcript. Cap to keep the prompt in budget.
+    const transcript = (Array.isArray(job.segments) && job.segments.length
+      ? job.segments.map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text)).join('\n')
+      : (job.text || '')).slice(0, 48_000);
+    if (!transcript.trim()) {
+      return res.status(400).json({ error: 'Job has no transcript to answer from' });
+    }
+
+    const systemPrompt = `You answer questions using ONLY the transcript below. If the answer isn't in it, say "That's not covered in this transcript." Quote or paraphrase the relevant part; do not use outside knowledge or speculate.
+
+TRANSCRIPT:
+${transcript}`;
+
+    // Keep a short rolling history so follow-ups have context, but cap it.
+    const priorTurns = (Array.isArray(history) ? history : [])
+      .slice(-6)
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+      .map((m) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+
+    const { text, usage, provider, model } = await chatComplete({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...priorTurns,
+        { role: 'user', content: String(question).slice(0, 2000) }
+      ],
+      temperature: 0.2,
+      maxTokens: 700
+    });
+
+    res.json({ success: true, answer: (text || '').trim(), provider, model, usage });
+  } catch (e) { next(e); }
+});
+
 router.delete('/:id', async (req, res, next) => {
   try {
     const job = await getJob(req.params.id);

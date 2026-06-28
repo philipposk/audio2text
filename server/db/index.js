@@ -73,6 +73,17 @@ function stripSegments(job) {
   return { ...rest, segmentCount: segments?.length || 0 };
 }
 
+// Build a short excerpt of `text` centered on the first match of `q`, so search
+// results can show *why* a job matched without shipping the whole transcript.
+function makeSnippet(text, q, radius = 90) {
+  if (!text) return '';
+  const i = text.toLowerCase().indexOf(String(q || '').toLowerCase());
+  if (i < 0) return text.slice(0, radius * 2).trim();
+  const start = Math.max(0, i - radius);
+  const end = Math.min(text.length, i + String(q).length + radius);
+  return (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '');
+}
+
 // ─── Supabase: jobs ───────────────────────────────────────────────────────────
 
 async function sb_createJob(payload) {
@@ -103,7 +114,10 @@ function sanitizePostgrest(term) {
 }
 
 async function sb_listJobs({ limit = 50, offset = 0, q, language, task, type } = {}) {
-  let query = sb().from('translator_jobs').select('id,created_at,type,source_name,language,task,method,duration,segments', { count: 'exact' });
+  // Pull `text` only when searching, so list payloads stay small but search
+  // results can carry a matched-excerpt snippet.
+  const cols = 'id,created_at,type,source_name,language,task,method,duration,segments' + (q ? ',text' : '');
+  let query = sb().from('translator_jobs').select(cols, { count: 'exact' });
   if (language) query = query.eq('language', language);
   if (task) query = query.eq('task', task);
   if (type) query = query.eq('type', type);
@@ -114,7 +128,13 @@ async function sb_listJobs({ limit = 50, offset = 0, q, language, task, type } =
   query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
-  return { jobs: (data || []).map(r => stripSegments(jobFromRow(r))), total: count || 0 };
+  const jobs = (data || []).map((r) => {
+    const job = stripSegments(jobFromRow(r));
+    if (q) job.snippet = makeSnippet(r.text, q);
+    delete job.text; // never ship the full transcript in a list response
+    return job;
+  });
+  return { jobs, total: count || 0 };
 }
 
 async function sb_getJob(jobId) {
@@ -296,7 +316,12 @@ async function lo_listJobs({ limit = 50, offset = 0, q, language, task, type } =
   if (language) rows = rows.filter(j => j.language === language);
   if (task) rows = rows.filter(j => j.task === task);
   if (type) rows = rows.filter(j => j.type === type);
-  return { jobs: rows.slice(offset, offset + limit).map(stripSegments), total: rows.length };
+  const jobs = rows.slice(offset, offset + limit).map((j) => {
+    const job = stripSegments(j);
+    if (q) { job.snippet = makeSnippet(j.text, q); delete job.text; }
+    return job;
+  });
+  return { jobs, total: rows.length };
 }
 
 async function lo_getJob(jobId) {

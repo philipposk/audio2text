@@ -78,12 +78,29 @@ function isRetryable(error) {
  * @param {'json'|'verbose_json'|'text'|'srt'|'vtt'} [options.response_format='verbose_json']
  * @param {Array<'word'|'segment'>} [options.timestamp_granularities=['segment']]
  */
-// Transcription models (env-overridable). Groq's whisper-large-v3-turbo is
-// ~9x cheaper than OpenAI whisper-1 ($0.04/hr vs $0.36/hr) and faster, so it's
-// preferred for the 'transcribe' task. The 'translate' task (audio→English) is
-// not supported by Groq's turbo model, so that always uses OpenAI.
+// Transcription models (env-overridable). Two quality tiers:
+//   fast     — Groq whisper-large-v3-turbo (~9x cheaper than OpenAI whisper-1,
+//              $0.04/hr vs $0.36/hr, 216x realtime). Default.
+//   accurate — Groq whisper-large-v3 (lower WER, same verbose_json+segments
+//              shape, a bit slower) / OpenAI gpt-4o-transcribe.
+// The 'translate' task (audio→English) only exists on the whisper-1
+// translations endpoint, so it always uses whisper-1 regardless of tier.
 const GROQ_TRANSCRIBE_MODEL = process.env.GROQ_TRANSCRIBE_MODEL || 'whisper-large-v3-turbo';
+const GROQ_TRANSCRIBE_MODEL_ACCURATE = process.env.GROQ_TRANSCRIBE_MODEL_ACCURATE || 'whisper-large-v3';
 const OPENAI_TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
+const OPENAI_TRANSCRIBE_MODEL_ACCURATE = process.env.OPENAI_TRANSCRIBE_MODEL_ACCURATE || 'gpt-4o-transcribe';
+
+// Resolve the model for a provider given the task and quality tier.
+function pickModel(providerName, task, quality) {
+  const accurate = quality === 'accurate';
+  if (providerName === 'groq') {
+    return accurate ? GROQ_TRANSCRIBE_MODEL_ACCURATE : GROQ_TRANSCRIBE_MODEL;
+  }
+  // OpenAI: translate must stay on whisper-1 (only model the translations
+  // endpoint accepts); gpt-4o-transcribe is transcribe-only.
+  if (task === 'translate') return OPENAI_TRANSCRIBE_MODEL;
+  return accurate ? OPENAI_TRANSCRIBE_MODEL_ACCURATE : OPENAI_TRANSCRIBE_MODEL;
+}
 
 export async function transcribeAudio(filePath, options = {}) {
   if (!fs.existsSync(filePath)) {
@@ -96,6 +113,7 @@ export async function transcribeAudio(filePath, options = {}) {
   const task = options.task === 'translate' ? 'translate' : 'transcribe';
   const response_format = options.response_format || 'verbose_json';
   const granularities = options.timestamp_granularities || ['segment'];
+  const quality = options.quality === 'accurate' ? 'accurate' : 'fast';
 
   // Provider attempt order: for transcription, Groq first (cheaper/faster) then
   // OpenAI as fallback. For audio→English translation, OpenAI only.
@@ -103,10 +121,10 @@ export async function transcribeAudio(filePath, options = {}) {
   const openai = getOpenAIClient();
   const providers = [];
   if (task === 'transcribe') {
-    if (groq) providers.push({ name: 'groq', client: groq, model: GROQ_TRANSCRIBE_MODEL });
-    if (openai) providers.push({ name: 'openai', client: openai, model: OPENAI_TRANSCRIBE_MODEL });
+    if (groq) providers.push({ name: 'groq', client: groq, model: pickModel('groq', task, quality) });
+    if (openai) providers.push({ name: 'openai', client: openai, model: pickModel('openai', task, quality) });
   } else if (openai) {
-    providers.push({ name: 'openai', client: openai, model: OPENAI_TRANSCRIBE_MODEL });
+    providers.push({ name: 'openai', client: openai, model: pickModel('openai', task, quality) });
   }
   if (providers.length === 0) {
     throw new Error(task === 'translate'
@@ -120,11 +138,18 @@ export async function transcribeAudio(filePath, options = {}) {
   for (const provider of providers) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        // gpt-4o-transcribe / gpt-4o-mini-transcribe only accept response_format
+        // 'json' or 'text' (verbose_json hard-errors) and don't return segment
+        // timestamps, so we request plain json and let segments default to [].
+        // Whisper models keep verbose_json + segment/word timestamps.
+        const isGpt4o = /gpt-4o/.test(provider.model);
+        const effectiveFormat = isGpt4o && response_format === 'verbose_json' ? 'json' : response_format;
+
         const fileStream = fs.createReadStream(filePath);
         const params = {
           file: fileStream,
           model: provider.model,
-          response_format,
+          response_format: effectiveFormat,
           temperature: 0
         };
         if (options.prompt) params.prompt = options.prompt;
@@ -136,7 +161,7 @@ export async function transcribeAudio(filePath, options = {}) {
           // in other languages. When omitted, Whisper detects the language itself.
           const lang = options.language;
           if (lang && lang !== 'auto') params.language = lang;
-          if (response_format === 'verbose_json') {
+          if (effectiveFormat === 'verbose_json') {
             params.timestamp_granularities = granularities;
           }
         }

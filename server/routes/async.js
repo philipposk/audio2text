@@ -29,10 +29,12 @@ router.post('/transcribe', upload.single('audio'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'audio file required' });
     const filePath = req.file.path;
     const task = req.body.task === 'translate' ? 'translate' : 'transcribe';
-    const language = req.body.language || 'el';
+    // Auto-detect by default (undefined) — never force 'el', and honor 'auto'.
+    const language = req.body.language && req.body.language !== 'auto' ? req.body.language : undefined;
     const prompt = req.body.prompt || '';
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
+    const quality = req.body.quality === 'accurate' ? 'accurate' : 'fast';
     const callbackUrl = req.body.callbackUrl || null;
 
     const apiKey = req.apiKey;
@@ -41,7 +43,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res, next) => {
       try {
         let transcription;
         let method = 'openai';
-        if (process.env.OPENAI_API_KEY) {
+        if (process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
           try {
             if (await needsChunking(filePath)) {
               const { chunks, cleanup } = await splitAudio(filePath);
@@ -49,20 +51,22 @@ router.post('/transcribe', upload.single('audio'), async (req, res, next) => {
                 const parts = [];
                 for (const c of chunks) {
                   const r = await transcribeAudio(c.path, {
-                    task, language, prompt,
+                    task, language, prompt, quality,
                     response_format: 'verbose_json',
                     timestamp_granularities: granularities
                   });
                   parts.push({ result: r, startSec: c.startSec });
+                  method = r.provider || method;
                 }
                 transcription = mergeTranscriptions(parts);
               } finally { await cleanup(); }
             } else {
               transcription = await transcribeAudio(filePath, {
-                task, language, prompt,
+                task, language, prompt, quality,
                 response_format: 'verbose_json',
                 timestamp_granularities: granularities
               });
+              method = transcription.provider || method;
             }
           } catch (err) {
             if (!/quota|billing|Connection/i.test(err.message || '')) throw err;

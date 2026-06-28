@@ -6,7 +6,7 @@
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "nodemon server/index.js",
+    "dev:server": "PORT=3000 nodemon server/index.js",
     "dev:client": "vite",
     "build": "vite build",
     "build:pages": "vite build && echo 'Frontend built to docs/ folder for GitHub Pages'",

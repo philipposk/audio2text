@@ -71,7 +71,7 @@ router.post('/', async (req, res, next) => {
 
   let downloadedPath;
   try {
-    const { url, task, language, word_timestamps, prompt } = req.body || {};
+    const { url, task, language, word_timestamps, prompt, quality } = req.body || {};
     if (!url) {
       return res.status(400).json({ error: 'Field "url" is required.' });
     }
@@ -121,6 +121,7 @@ router.post('/', async (req, res, next) => {
           task: useTask,
           language: lang,
           prompt: prompt || '',
+          quality: quality === 'accurate' ? 'accurate' : 'fast',
           response_format: 'verbose_json',
           timestamp_granularities: granularities
         });

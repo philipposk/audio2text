@@ -39,29 +39,31 @@ async function formFetch(path, formData) {
 export const health = () => jsonFetch('/health');
 export const listLanguages = () => jsonFetch('/translate/languages');
 
-export const transcribeFile = (file, { task = 'transcribe', language = 'auto', wordTimestamps = false, prompt = '' } = {}) => {
+export const transcribeFile = (file, { task = 'transcribe', language = 'auto', wordTimestamps = false, prompt = '', quality = 'fast' } = {}) => {
   const fd = new FormData();
   fd.append('audio', file);
   fd.append('task', task);
   if (language && language !== 'auto') fd.append('language', language);
   if (wordTimestamps) fd.append('word_timestamps', 'true');
   if (prompt) fd.append('prompt', prompt);
+  if (quality === 'accurate') fd.append('quality', 'accurate');
   return formFetch('/transcribe', fd);
 };
 
-export const ingestUrl = (url, { task = 'transcribe', language = 'auto', wordTimestamps = false } = {}) =>
+export const ingestUrl = (url, { task = 'transcribe', language = 'auto', wordTimestamps = false, quality = 'fast' } = {}) =>
   jsonFetch('/ingest', {
     method: 'POST',
-    body: JSON.stringify({ url, task, language: language === 'auto' ? undefined : language, word_timestamps: wordTimestamps })
+    body: JSON.stringify({ url, task, language: language === 'auto' ? undefined : language, word_timestamps: wordTimestamps, quality })
   });
 
 // Batch transcription — up to 25 files in one request. Returns
 // { total, ok, failed, results:[{file, jobId, preview, error?}] }.
-export const transcribeBatch = (files, { task = 'transcribe', language = 'auto' } = {}) => {
+export const transcribeBatch = (files, { task = 'transcribe', language = 'auto', quality = 'fast' } = {}) => {
   const fd = new FormData();
   for (const f of files) fd.append('audio', f);
   fd.append('task', task);
   if (language && language !== 'auto') fd.append('language', language);
+  if (quality === 'accurate') fd.append('quality', 'accurate');
   return formFetch('/transcribe/batch', fd);
 };
 
@@ -98,6 +100,14 @@ export const chatRefine = ({ message, transcription, history = [] }) =>
 // AI topic chapters with start times (for clickable markers).
 export const getChapters = ({ jobId, transcription, segments } = {}) =>
   jsonFetch('/chapters', { method: 'POST', body: JSON.stringify({ jobId, transcription, segments }) });
+
+// Open/unanswered questions raised in a transcript.
+export const getQuestions = ({ jobId, transcription, targetLang } = {}) =>
+  jsonFetch('/questions', { method: 'POST', body: JSON.stringify({ jobId, transcription, targetLang }) });
+
+// Grounded Q&A against a single job's transcript (no outside knowledge).
+export const askJob = (id, question, history = []) =>
+  jsonFetch(`/jobs/${id}/ask`, { method: 'POST', body: JSON.stringify({ question, history }) });
 
 // ---- jobs ----
 

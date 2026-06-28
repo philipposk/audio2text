@@ -4,7 +4,7 @@
     {
       "name": "translator-client",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:client"],
+      "runtimeArgs": ["run", "dev"],
       "port": 5184
     }
   ]

@@ -88,6 +88,9 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
     const language = req.body.language && req.body.language !== 'auto' ? req.body.language : undefined;
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
+    // Quality tier: 'accurate' uses larger/slower models (Groq whisper-large-v3,
+    // OpenAI gpt-4o-transcribe); 'fast' (default) uses turbo.
+    const quality = req.body.quality === 'accurate' ? 'accurate' : 'fast';
 
     // Prime Whisper with glossary terms (correct spellings at the source) +
     // any user-supplied prompt. A natural sentence works better than a bare list.
@@ -121,6 +124,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
                 task,
                 language,
                 prompt,
+                quality,
                 response_format: 'verbose_json',
                 timestamp_granularities: granularities
               });
@@ -137,6 +141,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
             task,
             language,
             prompt: vocabularyPrompt,
+            quality,
             response_format: 'verbose_json',
             timestamp_granularities: granularities
           });
@@ -171,7 +176,7 @@ router.post('/', upload.single('audio'), async (req, res, next) => {
       duration: transcription.duration || null,
       text: transcription.text,
       segments: transcription.segments || [],
-      meta: { words: transcription.words || null }
+      meta: { words: transcription.words || null, quality }
     });
 
     // Persist the source audio so the UI can play the transcript back. Keyed by

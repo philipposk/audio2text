@@ -13,6 +13,7 @@ import translateRoutes from './routes/translate.js';
 import ingestRoutes from './routes/ingest.js';
 import jobRoutes from './routes/jobs.js';
 import summaryRoutes from './routes/summary.js';
+import questionRoutes from './routes/questions.js';
 import chapterRoutes from './routes/chapters.js';
 import shareRoutes from './routes/share.js';
 import diarizeRoutes from './routes/diarize.js';
@@ -78,6 +79,7 @@ export function createApp({ withWebsocket = process.env.NODE_ENV !== 'test' } = 
   app.use('/api/messaging', messagingRoutes);
   app.use('/api/jobs', jobRoutes);
   app.use('/api/summary', summaryRoutes);
+  app.use('/api/questions', questionRoutes);
   app.use('/api/chapters', chapterRoutes);
   app.use('/api/diarize', diarizeRoutes);
   app.use('/api/detect-language', detectRoutes);

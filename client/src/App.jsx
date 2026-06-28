@@ -5,7 +5,7 @@ import {
   transcribeFile, transcribeBatch, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
   listGlossaries, createGlossary, deleteGlossary, summarize, getChapters,
-  updateSegments, jobAudioUrl, shareJob, getSharedTranscript,
+  getQuestions, updateSegments, jobAudioUrl, shareJob, getSharedTranscript,
   openLiveSocket, setApiKey, getApiKey, downloadBlob
 } from './api';
 import './styles/translator.css';
@@ -341,9 +341,11 @@ function Transcribing({ fileName, fileSize }) {
 }
 
 // ─── RecentCard ───────────────────────────────────────────────────────────────
-function RecentCard({ job, onSelect, onDelete }) {
+function RecentCard({ job, query, onSelect, onDelete }) {
   const src = langInfo(job.language || 'auto');
-  const snippet = (job.transcription || job.text || '').slice(0, 120);
+  // Prefer the server's matched-excerpt snippet (search results), else the
+  // transcript head (only present in local/dev list responses).
+  const snippet = job.snippet || (job.transcription || job.text || '').slice(0, 120);
 
   return (
     <div className="recent-card" onClick={() => onSelect(job)}>
@@ -360,7 +362,7 @@ function RecentCard({ job, onSelect, onDelete }) {
         <span>{fmtDate(job.createdAt)}</span>
       </div>
       <div className="recent-card-title">{job.filename || job.sourceName || job.title || job.id}</div>
-      <div className="recent-card-snippet">{snippet}…</div>
+      <div className="recent-card-snippet">{query ? highlight(snippet, query) : snippet}{job.snippet ? '' : '…'}</div>
       <div className="recent-card-foot">
         <span>{I.play} {fmtDuration(job.duration)}</span>
         <span
@@ -439,6 +441,8 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [summaryKind, setSummaryKind] = useState('generic');
   const [chapters, setChapters] = useState(null);
   const [chaptering, setChaptering] = useState(false);
+  const [questions, setQuestions] = useState(null);
+  const [loadingQ, setLoadingQ] = useState(false);
   const [glossaryId, setGlossaryId] = useState('');
   const [editedSegs, setEditedSegs] = useState(null);
   const [editIdx, setEditIdx] = useState(-1);
@@ -447,7 +451,7 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const audioRef = useRef(null);
 
   // Drop local edits + playback highlight when switching to a different job.
-  useEffect(() => { setEditedSegs(null); setEditIdx(-1); setActiveSeg(-1); setChapters(null); setSummary(null); }, [job.id]);
+  useEffect(() => { setEditedSegs(null); setEditIdx(-1); setActiveSeg(-1); setChapters(null); setSummary(null); setQuestions(null); }, [job.id]);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
@@ -585,6 +589,18 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     }
   };
 
+  const handleQuestions = async () => {
+    setLoadingQ(true);
+    try {
+      const res = await getQuestions({ jobId: job.id, transcription: fullText });
+      setQuestions(res.questions || []);
+    } catch (err) {
+      onError?.(err.message || 'Question detection failed');
+    } finally {
+      setLoadingQ(false);
+    }
+  };
+
   // Jump to a time: seek audio if available, else scroll to the nearest segment.
   const goToTime = (sec) => {
     if (hasAudio) { seekTo(sec); return; }
@@ -631,6 +647,9 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </button>
             <button className="btn sm" onClick={handleChapters} disabled={chaptering}>
               {I.history} {chaptering ? 'Detecting…' : 'Chapters'}
+            </button>
+            <button className="btn sm" onClick={handleQuestions} disabled={loadingQ}>
+              {I.spark} {loadingQ ? 'Scanning…' : 'Questions'}
             </button>
             <button className="btn sm" onClick={handleShare}>
               {copying === 'share' ? 'Link copied!' : 'Share'}
@@ -739,6 +758,17 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
                 <span className="summary-close" onClick={() => setSummary(null)}>✕</span>
               </span>
             </div>
+            {summary.overview && (
+              <div className="summary-block">
+                <h5>Overview</h5>
+                <p style={{ margin: 0, color: 'var(--ink)', lineHeight: 1.5 }}>{summary.overview}</p>
+              </div>
+            )}
+            {Array.isArray(summary.attendees) && summary.attendees.length > 0 && (
+              <div className="summary-topics" style={{ marginBottom: 4 }}>
+                {summary.attendees.map((a, i) => <span key={i} className="chip">{fmtActionItem(a)}</span>)}
+              </div>
+            )}
             {Array.isArray(summary.tldr) && summary.tldr.length > 0 && (
               <div className="summary-block">
                 <h5>TL;DR</h5>
@@ -763,6 +793,48 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
               <div className="summary-topics">
                 {summary.topics.map((t, i) => <span key={i} className="chip">{fmtActionItem(t)}</span>)}
               </div>
+            )}
+            {Array.isArray(summary.sections) && summary.sections.length > 0 && (
+              <div className="summary-block">
+                <h5>Notes by topic</h5>
+                {summary.sections.map((s, i) => (
+                  <div key={i} style={{ marginBottom: 10 }}>
+                    <strong style={{ fontSize: 13 }}>{s.title}</strong>
+                    {Array.isArray(s.notes) && s.notes.length > 0 && (
+                      <ul style={{ margin: '4px 0' }}>{s.notes.map((n, j) => <li key={j}>{fmtActionItem(n)}</li>)}</ul>
+                    )}
+                    {Array.isArray(s.actions) && s.actions.length > 0 && (
+                      <ul style={{ margin: '4px 0' }}>{s.actions.map((a, j) => (
+                        <li key={j}>☐ {fmtActionItem(a)}</li>
+                      ))}</ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Open questions panel */}
+        {questions && (
+          <div className="summary-panel">
+            <div className="summary-head">
+              <span className="summary-title">{I.spark} Open questions{questions.length ? ` (${questions.filter(q => !q.answered).length} open)` : ''}</span>
+              <span className="summary-close" style={{ marginLeft: 'auto' }} onClick={() => setQuestions(null)}>✕</span>
+            </div>
+            {questions.length === 0 ? (
+              <p style={{ color: 'var(--muted)', margin: 0 }}>No questions detected.</p>
+            ) : (
+              <ul style={{ margin: 0 }}>
+                {questions.map((q, i) => (
+                  <li key={i} style={{ marginBottom: 6 }}>
+                    <span style={{ marginRight: 6 }}>{q.answered ? '✅' : '❓'}</span>
+                    <strong>{q.question}</strong>
+                    {q.askedBy && <em style={{ color: 'var(--muted)' }}> — {q.askedBy}</em>}
+                    {q.answer && <div style={{ color: 'var(--muted)', fontSize: 13, marginTop: 2 }}>{q.answer}</div>}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
@@ -906,40 +978,45 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
 }
 
 // ─── History view ─────────────────────────────────────────────────────────────
-function HistoryView({ jobs, onSelect, onDeleteJob, loading }) {
+function HistoryView({ jobs, onSelect, onDeleteJob, onSearch, loading }) {
   const [q, setQ] = useState('');
-  const filtered = jobs.filter(j =>
-    !q || (j.filename || '').toLowerCase().includes(q.toLowerCase()) ||
-    (j.transcription || '').toLowerCase().includes(q.toLowerCase())
-  );
+
+  // Search the FULL transcript text server-side (debounced), not just the 50
+  // already-loaded jobs — Supabase doesn't ship transcript text in the list, so
+  // client-only filtering would miss matches inside transcripts.
+  useEffect(() => {
+    const t = setTimeout(() => onSearch?.(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q, onSearch]);
 
   return (
     <div style={{ padding: '24px 32px' }}>
       <div className="page-head">
         <div>
           <h1 className="page-title">History</h1>
-          <p className="page-sub">All your previous transcriptions and translations.</p>
+          <p className="page-sub">Search across every transcript — words spoken anywhere, not just titles.</p>
         </div>
       </div>
 
       <div className="url-input" style={{ marginBottom: 24 }}>
         <span className="ico">{I.search}</span>
         <input
-          placeholder="Search transcriptions…"
+          placeholder="Search inside all transcripts…"
           value={q}
           onChange={e => setQ(e.target.value)}
         />
+        {q && <span className="search-clear" onClick={() => setQ('')}>✕</span>}
       </div>
 
       {loading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
 
-      {!loading && filtered.length === 0 && (
-        <p style={{ color: 'var(--muted)' }}>No jobs yet. Transcribe something to get started.</p>
+      {!loading && jobs.length === 0 && (
+        <p style={{ color: 'var(--muted)' }}>{q ? `No transcripts match “${q}”.` : 'No jobs yet. Transcribe something to get started.'}</p>
       )}
 
       <div className="recent-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {filtered.map(job => (
-          <RecentCard key={job.id} job={job} onSelect={onSelect} onDelete={onDeleteJob} />
+        {jobs.map(job => (
+          <RecentCard key={job.id} job={job} query={q} onSelect={onSelect} onDelete={onDeleteJob} />
         ))}
       </div>
     </div>
@@ -1416,6 +1493,8 @@ function MainApp() {
   const [source, setSource] = useState(() => localStorage.getItem('t_source') || 'auto');
   const [target, setTarget] = useState(() => localStorage.getItem('t_target') || 'en');
   const [detectedLang, setDetectedLang] = useState(null);
+  // Accurate mode = larger/slower models (Groq whisper-large-v3 / gpt-4o-transcribe).
+  const [accurate, setAccurate] = useState(() => localStorage.getItem('t_accurate') === '1');
 
   // Lang picker
   const [pickingLang, setPickingLang] = useState(null); // 'source' | 'target' | null
@@ -1457,6 +1536,7 @@ function MainApp() {
   // Remember the chosen languages across sessions.
   useEffect(() => { localStorage.setItem('t_source', source); }, [source]);
   useEffect(() => { localStorage.setItem('t_target', target); }, [target]);
+  useEffect(() => { localStorage.setItem('t_accurate', accurate ? '1' : '0'); }, [accurate]);
 
   // ⌘K / Ctrl-K focuses the transcript search when viewing a result.
   useEffect(() => {
@@ -1485,6 +1565,17 @@ function MainApp() {
     } catch { }
     setLoadingJobs(false);
   };
+
+  // Server-side full-transcript search for the History view (stable identity so
+  // the HistoryView debounce effect doesn't re-fire).
+  const searchJobs = useCallback(async (q) => {
+    setLoadingJobs(true);
+    try {
+      const data = await listJobs({ q: q || undefined, limit: 50 });
+      setJobs(data.jobs || []);
+    } catch { }
+    setLoadingJobs(false);
+  }, []);
 
   // ── actions ──
 
@@ -1526,12 +1617,14 @@ function MainApp() {
           task: 'transcribe',
           language: source === 'auto' ? undefined : source,
           wordTimestamps: true,
+          quality: accurate ? 'accurate' : 'fast',
         });
       } else {
         job = await ingestUrl(url, {
           task: 'transcribe',
           language: source === 'auto' ? undefined : source,
           wordTimestamps: true,
+          quality: accurate ? 'accurate' : 'fast',
         });
       }
       if (job.language) setDetectedLang(langInfo(job.language).name);
@@ -1561,6 +1654,7 @@ function MainApp() {
       const res = await transcribeBatch(files, {
         task: 'transcribe',
         language: source === 'auto' ? undefined : source,
+        quality: accurate ? 'accurate' : 'fast',
       });
       setBatch({ processing: false, count: res.total, ok: res.ok, failed: res.failed, results: res.results || [] });
       loadJobs();
@@ -1687,6 +1781,10 @@ function MainApp() {
               detectedLang={detectedLang}
             />
             <Modes mode={mode} onChange={setMode} />
+            <label className="accurate-toggle" title="Accurate mode uses larger, slower models (Groq whisper-large-v3 / gpt-4o-transcribe) for lower error rates. Off = fast & cheap (turbo).">
+              <input type="checkbox" checked={accurate} onChange={e => setAccurate(e.target.checked)} />
+              <span>Accurate mode {accurate ? '· slower, lower error rate' : '· fast & cheap'}</span>
+            </label>
             {mode === 'file' && <FileDrop onFile={handleFile} onBatch={handleBatch} />}
             {mode === 'url' && <UrlInput onUrl={handleUrl} />}
             {mode === 'mic' && <MicPanel onStart={() => setActiveView('live')} />}
@@ -1798,6 +1896,7 @@ function MainApp() {
                 jobs={jobs}
                 onSelect={handleSelectJob}
                 onDeleteJob={handleDeleteJob}
+                onSearch={searchJobs}
                 loading={loadingJobs}
               />
             </div>

@@ -42,7 +42,7 @@ const CONCURRENCY = parseInt(process.env.BATCH_CONCURRENCY || '2', 10);
 async function processOne(file, opts, req) {
   const filePath = file.path;
   try {
-    const { task, language, prompt, granularities } = opts;
+    const { task, language, prompt, granularities, quality } = opts;
     let transcription;
     let method = 'openai';
     if (process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
@@ -55,7 +55,7 @@ async function processOne(file, opts, req) {
             for (const c of chunks) {
               const chunkPrompt = [prompt, carry].filter(Boolean).join(' ').slice(-880);
               const r = await transcribeAudio(c.path, {
-                task, language, prompt: chunkPrompt,
+                task, language, prompt: chunkPrompt, quality,
                 response_format: 'verbose_json',
                 timestamp_granularities: granularities
               });
@@ -67,7 +67,7 @@ async function processOne(file, opts, req) {
           } finally { await cleanup(); }
         } else {
           transcription = await transcribeAudio(filePath, {
-            task, language, prompt,
+            task, language, prompt, quality,
             response_format: 'verbose_json',
             timestamp_granularities: granularities
           });
@@ -129,7 +129,8 @@ router.post('/', upload.array('audio', 25), async (req, res, next) => {
     const prompt = req.body.prompt || '';
     const wantsWords = String(req.body.word_timestamps || 'false') === 'true';
     const granularities = wantsWords ? ['segment', 'word'] : ['segment'];
-    const opts = { task, language, prompt, granularities };
+    const quality = req.body.quality === 'accurate' ? 'accurate' : 'fast';
+    const opts = { task, language, prompt, granularities, quality };
 
     const results = new Array(files.length);
     let cursor = 0;

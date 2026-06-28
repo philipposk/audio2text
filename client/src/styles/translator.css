@@ -1066,3 +1066,16 @@
     .content { padding: 28px 20px 60px; }
     .topbar { padding: 14px 20px; }
   }
+
+/* Accurate-mode toggle (transcribe view) */
+.accurate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.accurate-toggle input { accent-color: var(--accent); cursor: pointer; }
