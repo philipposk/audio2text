@@ -13,6 +13,7 @@ import translateRoutes from './routes/translate.js';
 import ingestRoutes from './routes/ingest.js';
 import jobRoutes from './routes/jobs.js';
 import summaryRoutes from './routes/summary.js';
+import chapterRoutes from './routes/chapters.js';
 import diarizeRoutes from './routes/diarize.js';
 import detectRoutes from './routes/detect.js';
 import batchRoutes from './routes/batch.js';
@@ -73,6 +74,7 @@ export function createApp({ withWebsocket = process.env.NODE_ENV !== 'test' } = 
   app.use('/api/messaging', messagingRoutes);
   app.use('/api/jobs', jobRoutes);
   app.use('/api/summary', summaryRoutes);
+  app.use('/api/chapters', chapterRoutes);
   app.use('/api/diarize', diarizeRoutes);
   app.use('/api/detect-language', detectRoutes);
   app.use('/api/burn', burnRoutes);

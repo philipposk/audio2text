@@ -95,6 +95,10 @@ export const summarize = ({ transcription, jobId, kind = 'generic', length = 'no
 export const chatRefine = ({ message, transcription, history = [] }) =>
   jsonFetch('/chat', { method: 'POST', body: JSON.stringify({ message, transcription, history }) });
 
+// AI topic chapters with start times (for clickable markers).
+export const getChapters = ({ jobId, transcription, segments } = {}) =>
+  jsonFetch('/chapters', { method: 'POST', body: JSON.stringify({ jobId, transcription, segments }) });
+
 // ---- jobs ----
 
 export const listJobs = ({ q, language, task, type, limit = 50, offset = 0 } = {}) => {

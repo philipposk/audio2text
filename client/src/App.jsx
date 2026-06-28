@@ -4,7 +4,7 @@ import { hexToSoft, fmtDuration, fmtDate, langInfo, fmtActionItem } from './lib/
 import {
   transcribeFile, transcribeBatch, ingestUrl, translateJobSegments,
   chatRefine, listJobs, getJob, deleteJob, exportTranscript,
-  listGlossaries, createGlossary, deleteGlossary, summarize,
+  listGlossaries, createGlossary, deleteGlossary, summarize, getChapters,
   updateSegments, jobAudioUrl,
   openLiveSocket, setApiKey, getApiKey, downloadBlob
 } from './api';
@@ -437,6 +437,8 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const [summary, setSummary] = useState(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summaryKind, setSummaryKind] = useState('generic');
+  const [chapters, setChapters] = useState(null);
+  const [chaptering, setChaptering] = useState(false);
   const [glossaryId, setGlossaryId] = useState('');
   const [editedSegs, setEditedSegs] = useState(null);
   const [editIdx, setEditIdx] = useState(-1);
@@ -445,7 +447,7 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
   const audioRef = useRef(null);
 
   // Drop local edits + playback highlight when switching to a different job.
-  useEffect(() => { setEditedSegs(null); setEditIdx(-1); setActiveSeg(-1); }, [job.id]);
+  useEffect(() => { setEditedSegs(null); setEditIdx(-1); setActiveSeg(-1); setChapters(null); setSummary(null); }, [job.id]);
 
   const src = langInfo(source !== 'auto' ? source : (job.language || 'auto'));
   const tgt = langInfo(target);
@@ -559,6 +561,26 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
     }
   };
 
+  const handleChapters = async () => {
+    setChaptering(true);
+    try {
+      const res = await getChapters({ jobId: job.id, transcription: fullText, segments });
+      setChapters(res.chapters || []);
+    } catch (err) {
+      onError?.(err.message || 'Chapter detection failed');
+    } finally {
+      setChaptering(false);
+    }
+  };
+
+  // Jump to a time: seek audio if available, else scroll to the nearest segment.
+  const goToTime = (sec) => {
+    if (hasAudio) { seekTo(sec); return; }
+    let idx = 0;
+    for (let i = 0; i < segments.length; i++) { if ((segments[i].start || 0) <= sec) idx = i; else break; }
+    document.querySelector(`[data-seg="${idx}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
   // Filter segments by search term (matches highlighted via highlight()).
   const matches = (txt) => !search || (txt || '').toLowerCase().includes(search.toLowerCase());
   const visibleSegs = search ? segments.filter(s => matches(s.text)) : segments;
@@ -594,6 +616,9 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </button>
             <button className="btn sm" onClick={handleSummarize} disabled={summarizing}>
               {I.spark} {summarizing ? 'Summarizing…' : 'Summary'}
+            </button>
+            <button className="btn sm" onClick={handleChapters} disabled={chaptering}>
+              {I.history} {chaptering ? 'Detecting…' : 'Chapters'}
             </button>
             {!translatedJob && glossaries.length > 0 && (
               <select
@@ -648,6 +673,27 @@ function ResultView({ job, translatedJob, source, target, onTranslate, translati
             </span>
           )}
         </div>
+
+        {/* Chapters panel */}
+        {chapters && chapters.length > 0 && (
+          <div className="chapters-panel">
+            <div className="chapters-head">
+              <span className="summary-title">{I.history} Chapters</span>
+              <span className="summary-close" onClick={() => setChapters(null)}>✕</span>
+            </div>
+            <div className="chapters-list">
+              {chapters.map((c, i) => (
+                <div key={i} className="chapter-row" onClick={() => goToTime(c.startSec)}>
+                  <span className="chapter-time">{fmtDuration(c.startSec) || '0:00'}</span>
+                  <div className="chapter-meta">
+                    <span className="chapter-title">{c.title}</span>
+                    {c.summary && <span className="chapter-summary">{c.summary}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Summary panel */}
         {summary && (
