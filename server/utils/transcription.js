@@ -29,7 +29,12 @@ function sleep(ms) {
 // Common Whisper hallucinations on silent/near-silent audio — fabricated boilerplate
 // it emits when there's nothing to transcribe (caption-site credits, filler thanks).
 const HALLUCINATION_PATTERNS = [
-  /^[\s\W]*$/,                              // empty / punctuation-only
+  // Empty / whitespace / punctuation / symbol only. MUST be Unicode-aware: the
+  // old /^[\s\W]*$/ used \W, which is ASCII-only, so it matched every Greek,
+  // Cyrillic, Arabic, or CJK letter and silently deleted whole non-Latin
+  // transcripts. \p{P} (punctuation) + \p{S} (symbols) keep letters in any
+  // script while still dropping "..." / "   " / "♪".
+  /^[\s\p{P}\p{S}]*$/u,
   /amara\.org/i,
   /subtitle[sd]?\s+by/i,
   /transcri(bed|ption)\s+by/i,
@@ -40,7 +45,7 @@ const HALLUCINATION_PATTERNS = [
 // so it matches. Conservative: only removes a segment when Whisper itself rates
 // it very likely non-speech (no_speech_prob high AND avg_logprob low), or when
 // the text is a known boilerplate hallucination. Logged, never silent.
-function filterHallucinations(result) {
+export function filterHallucinations(result) {
   if (!result || !Array.isArray(result.segments) || result.segments.length === 0) return result;
   const kept = [];
   let dropped = 0;

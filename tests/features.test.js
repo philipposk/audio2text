@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import { computeCutPoints } from '../server/utils/audioChunk.js';
+import { filterHallucinations } from '../server/utils/transcription.js';
 import { createJob } from '../server/db/index.js';
 
 process.env.NODE_ENV = 'test';
@@ -38,6 +39,37 @@ let app;
 beforeAll(async () => {
   const mod = await import('../server/index.js');
   app = mod.createApp({ withWebsocket: false });
+});
+
+describe('filterHallucinations (must not wipe non-Latin scripts)', () => {
+  const seg = (text, extra = {}) => ({ text, no_speech_prob: 0, avg_logprob: -0.05, ...extra });
+
+  it('keeps real speech in Greek, Cyrillic, and CJK', () => {
+    for (const text of ['Καλημέρα σε όλους.', 'Привет мир', '你好世界', 'Good morning.']) {
+      const out = filterHallucinations({ segments: [seg(text)], text });
+      expect(out.segments).toHaveLength(1);
+      expect(out.text).toBe(text);
+    }
+  });
+
+  it('still drops punctuation/symbol/whitespace-only and known boilerplate', () => {
+    const segs = [
+      seg('...'), seg('   '), seg('♪'),
+      seg('Subtitles by amara.org'),
+      seg('Καλημέρα.') // real → survives
+    ];
+    const out = filterHallucinations({ segments: segs, text: '' });
+    expect(out.segments).toHaveLength(1);
+    expect(out.segments[0].text).toBe('Καλημέρα.');
+  });
+
+  it('drops low-confidence non-speech segments regardless of script', () => {
+    const out = filterHallucinations({
+      segments: [seg('εεεμ', { no_speech_prob: 0.9, avg_logprob: -0.8 }), seg('Γεια.')],
+      text: ''
+    });
+    expect(out.segments.map(s => s.text)).toEqual(['Γεια.']);
+  });
 });
 
 describe('computeCutPoints (VAD-aware chunking)', () => {

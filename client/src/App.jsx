@@ -1083,8 +1083,25 @@ function LiveView({ source, onJobCreated }) {
       if (recordingRef.current) recordCycle(); // next clip starts right away
       sendClip(blob, myIdx);                    // transcribe this one in parallel
     };
+    // Without this, a recorder error (codec hiccup, track ended) goes 'inactive'
+    // WITHOUT firing onstop — the loop would die silently and "stop after one
+    // sentence" with no message. Surface it instead.
+    mr.onerror = (e) => {
+      recordingRef.current = false;
+      stopTimer();
+      setErrMsg('Recording error: ' + (e?.error?.message || e?.error?.name || 'unknown'));
+      setStatus('error');
+    };
     mrRef.current = mr;
-    mr.start();
+    try {
+      mr.start();
+    } catch (err) {
+      recordingRef.current = false;
+      stopTimer();
+      setErrMsg('Could not start recorder: ' + err.message);
+      setStatus('error');
+      return;
+    }
     setTimeout(() => { if (mr.state !== 'inactive') mr.stop(); }, CLIP_MS);
   };
 
@@ -1095,6 +1112,16 @@ function LiveView({ source, onJobCreated }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      // If the mic track ends mid-session (device unplugged, OS revokes), stop
+      // cleanly instead of looping over a dead stream.
+      stream.getTracks().forEach(t => t.addEventListener('ended', () => {
+        if (recordingRef.current) {
+          recordingRef.current = false;
+          stopTimer();
+          setErrMsg('Microphone disconnected.');
+          setStatus('error');
+        }
+      }));
       recordingRef.current = true;
       setStatus('recording');
       setElapsed(0);
@@ -1664,6 +1691,13 @@ function MainApp() {
       setCurrentJob(normalized);
       setAppState('result');
       loadJobs();
+      // Surface genuinely empty results instead of showing a blank transcript.
+      const txt = (normalized.transcription || normalized.text || '').trim();
+      if (!txt && !(normalized.segments || []).length) {
+        setError('No speech detected — the recording may be silent, too quiet, or an unsupported format.');
+      } else {
+        await maybeAutoTranslate(normalized);
+      }
     } catch (err) {
       setError(err.message || 'Transcription failed');
       setAppState('empty');
@@ -1708,6 +1742,24 @@ function MainApp() {
     } finally {
       setTranslating(false);
     }
+  };
+
+  // The FROM→TO picker promises translation, but every input path only
+  // transcribes. So after a fresh transcription, auto-translate to the chosen
+  // target when it differs from the detected language. Non-fatal: the transcript
+  // still shows, and the manual "Translate →" button remains for re-runs.
+  const maybeAutoTranslate = async (job) => {
+    if (!job?.id) return;
+    const detected = String(job.language || '').slice(0, 2).toLowerCase();
+    const tgt = String(target || '').slice(0, 2).toLowerCase();
+    if (!tgt || tgt === detected) return; // same language → nothing to translate
+    setTranslating(true);
+    try {
+      const meta = await translateJobSegments(job.id, target, job.language || undefined, undefined);
+      const newId = meta.jobId || meta.id;
+      if (newId) { const full = await getJob(newId); setTranslatedJob(full?.job || full); }
+    } catch { /* keep the transcript; user can retry via the Translate button */ }
+    finally { setTranslating(false); }
   };
 
   const handleRefine = async (message) => {
@@ -1777,8 +1829,11 @@ function MainApp() {
   const handleLiveJobCreated = async (jobId) => {
     try {
       const data = await getJob(jobId);
-      if (data?.job) handleSelectJob(data.job);
-      else if (data?.id) handleSelectJob(data);
+      const job = data?.job || data;
+      if (job) {
+        await handleSelectJob(job);
+        await maybeAutoTranslate(job); // honor the FROM→TO target for live too
+      }
     } catch { }
   };
 
