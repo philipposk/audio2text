@@ -21,7 +21,7 @@ export const I = {
 };
 
 export const LANGS = [
-  { code: 'auto', name: 'Auto-detect', flag: 'AU', color: '#7c7a72' },
+  { code: 'auto', name: 'Auto-detect', flag: 'AU', color: '#66645d' },
   { code: 'en', name: 'English',     flag: 'EN', color: '#0a3c7a' },
   { code: 'el', name: 'Greek',       flag: 'EL', color: '#1f5d4c' },
   { code: 'es', name: 'Spanish',     flag: 'ES', color: '#c7522a' },
