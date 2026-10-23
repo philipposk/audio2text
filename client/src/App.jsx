@@ -235,7 +235,7 @@ function FileDrop({ onFile, onBatch }) {
         </svg>
       </div>
       <div>
-        <h3>Drop a recording, paste, or browse</h3>
+        <h2>Drop a recording, paste, or browse</h2>
         <p>Up to 2 GB · one file or many · we'll detect the language automatically</p>
       </div>
       <div className="dropzone-formats">

@@ -4,7 +4,7 @@
     --ink: #0f0f0e;
     --ink-2: #2a2a28;
     --muted: #66645d;
-    --muted-2: #a9a69b;
+    --muted-2: #757164;
     --line: #ebe8df;
     --line-2: #d9d5c8;
     --accent: #1f5d4c;
@@ -21,7 +21,7 @@
     --ink: #f4f2ec;
     --ink-2: #d8d5cb;
     --muted: #8b887e;
-    --muted-2: #5d5b53;
+    --muted-2: #848176;
     --line: #25241f;
     --line-2: #34322c;
     --accent: #6ad0b0;
@@ -397,7 +397,7 @@
     color: var(--accent);
     display: grid; place-items: center;
   }
-  .dropzone h3 {
+  .dropzone h3, .dropzone h2 {
     font-family: var(--font-serif);
     font-weight: 400;
     font-style: italic;
