@@ -44,7 +44,7 @@ export function langInfo(code) {
   if (byName) return byName;
   if (lc === 'auto') return LANGS[0];
   const flag = lc.slice(0, 2).toUpperCase();
-  return { code: lc, name: lc.charAt(0).toUpperCase() + lc.slice(1), flag, color: '#7c7a72' };
+  return { code: lc, name: lc.charAt(0).toUpperCase() + lc.slice(1), flag, color: '#66645d' };
 }
 
 // Summary action items may be plain strings or {task,owner,due} objects —
