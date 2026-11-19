@@ -1,0 +1,17 @@
+# Translator
+
+> Translator writes out everything said in a recording. Upload a file, paste a YouTube, Vimeo or SoundCloud link, or use your microphone, then translate the transcript into more than 25 languages or turn it into subtitles.
+
+## What it does
+- Transcribes uploaded audio and video files
+- Works with YouTube, Vimeo and SoundCloud links
+- Live transcription from your microphone
+- Translates transcripts into more than 25 languages, or from another language into English
+- Makes subtitle files and can burn subtitles onto a video
+- Labels who said what when several people speak
+- Tidies up or rewrites the text with an AI helper
+- Exports to Word, PDF, plain text or subtitle files, and keeps a history of past transcripts
+
+## Links
+- [Translator](https://audio2text.6x7.gr/)
+- [6x7](https://6x7.gr/), [all 6x7 apps](https://portfolio.6x7.gr/)
