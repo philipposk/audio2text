@@ -1,12 +1,12 @@
 # Translator
 
-> Translator writes out everything said in a recording. Upload a file, paste a YouTube, Vimeo or SoundCloud link, or use your microphone, then translate the transcript into more than 25 languages or turn it into subtitles.
+> Translator writes out everything said in a recording. Upload a file, paste a YouTube, Vimeo or SoundCloud link, or use your microphone, then translate the transcript into 15 languages or turn it into subtitles.
 
 ## What it does
 - Transcribes uploaded audio and video files
 - Works with YouTube, Vimeo and SoundCloud links
 - Live transcription from your microphone
-- Translates transcripts into more than 25 languages, or from another language into English
+- Translates transcripts into 15 languages, or from another language into English
 - Makes subtitle files and can burn subtitles onto a video
 - Labels who said what when several people speak
 - Tidies up or rewrites the text with an AI helper
